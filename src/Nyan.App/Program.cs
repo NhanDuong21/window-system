@@ -11,6 +11,7 @@ public static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        var startup=System.Diagnostics.Stopwatch.StartNew();
         if(!OperatingSystem.IsWindows())return 1;
         if(args.Length==2&&args[0]=="--elevated-action")return Elevated(args[1]);
         bool uiChecks=args.Length==2&&args[0]=="--ui-checks";
@@ -36,20 +37,27 @@ public static class Program
             var window=new MainWindow(center,uiChecks);
             if(uiChecks||capture)
             {
-                window.Loaded+=async(_,_)=>
+                window.ContentRendered+=async(_,_)=>
                 {
+                    var firstPaintMs=startup.ElapsedMilliseconds;
                     try
                     {
                         var notes=new List<string>();
                         if(uiChecks)notes.AddRange(await UiChecks.RunAsync(window,evidence!));
                         else
                         {
-                            notes.Add("Windows native x64; elevated="+NativeSecurity.IsAdministrator);
+                            notes.Add("Windows native x64; elevated="+NativeSecurity.IsAdministrator+"; packaged="+NativeSecurity.HasPackageIdentity+"; redirectedAppData="+NativeSecurity.HasAppDataRedirection);
+                            // Measure stable idle separately from screenshot allocation/GC.
+                            await window.NavigateForTestAsync(Module.Settings);await Task.Delay(5000);
+                            var process=System.Diagnostics.Process.GetCurrentProcess();var cpuStart=process.TotalProcessorTime;var idleWatch=System.Diagnostics.Stopwatch.StartNew();await Task.Delay(10000);process.Refresh();var idleCpu=(process.TotalProcessorTime-cpuStart).TotalMilliseconds/idleWatch.Elapsed.TotalMilliseconds/Environment.ProcessorCount*100;
+                            File.WriteAllText(Path.Combine(evidence!,"release-performance.json"),System.Text.Json.JsonSerializer.Serialize(new{firstPaintMs,idleCpuPercent=idleCpu,workingSetMiB=process.WorkingSet64/1048576.0,privateMiB=process.PrivateMemorySize64/1048576.0,dpiScale=VisualTreeHelper.GetDpi(window).DpiScaleX,packaged=NativeSecurity.HasPackageIdentity,condition="Self-contained x64; first ContentRendered event; Settings idle settles for 5 seconds then CPU sampled over 10 seconds, before allocating capture images; CPU normalized by logical processor count",budgetFirstPaintMs=2500,budgetIdleCpuPercent=1.0,budgetWorkingSetMiB=350},new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
                             foreach(var module in new[]{Module.Dashboard,Module.Applications,Module.Startup,Module.Processes,Module.Storage,Module.Services,Module.DevTools,Module.Ports,Module.Environment,Module.Network,Module.Snapshots,Module.Cleanup,Module.History,Module.Settings})
                             {
                                 // Read-only captures: no system mutation, no cleanup execution.
                                 await window.NavigateForTestAsync(module);await Task.Delay(150);
-                                SaveImage(window,Path.Combine(evidence!,module+"-light.png"));notes.Add("CAPTURE "+module);
+                                SaveImage(window,Path.Combine(evidence!,module+"-light.png"));var shown=window.ResultForTest;
+                                notes.Add("CAPTURE "+module+" state="+shown?.State+" rows="+shown?.Rows.Count);
+                                if(shown==null||shown.State is ResultState.Error or ResultState.Cancelled||module is Module.Ports or Module.Services&&shown.State is ResultState.Denied or ResultState.Empty)notes.Add("FAIL native read "+module+" state="+shown?.State);
                             }
                             window.ToggleThemeForTest();await window.NavigateForTestAsync(Module.Dashboard);await Task.Delay(200);SaveImage(window,Path.Combine(evidence!,"Dashboard-dark.png"));
                         }

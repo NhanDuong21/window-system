@@ -14,4 +14,4 @@ State hỏng: app báo lỗi, giữ file gốc. Đóng app, sao lưu cả thư m
 
 Cleanup Temp User cũ7days, không default selection. Chỉ người dùng chọn mới recycle; app không hứa undo. Crash có thể để file trong quarantine với bản ghi original path/identity DPAPI; không tự xóa quarantine. Giữ file và xem history/hỗ trợ khôi phục thủ công. Không Downloads/browser/source/database/Windows cleanup.
 
-App chưa ký. Không tắt SmartScreen/UAC/Defender. UAC hủy/DPAPI khác account hiện cancelled/failed. App chính user thường; action cao xác nhận riêng.
+App chưa ký. Không tắt SmartScreen/UAC/Defender. UAC hủy/DPAPI khác account hiện cancelled/failed. App chính user thường; action cao xác nhận riêng. Nên mở EXE hoặc Mo-Nyan.cmd từ File Explorer. Host Desktop Bridge có thể chuyển hướng AppData/HKCU dù process không có package identity; app nhận diện native AppData mapping và từ chối production mutation trong ngữ cảnh đó. Dữ liệu app của host thử có thể nằm ở `%LOCALAPPDATA%\Packages\<host>\LocalCache\Local\NyanControlCenter`; không tự gộp với dữ liệu mở từ Explorer.

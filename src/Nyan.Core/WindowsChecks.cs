@@ -90,6 +90,13 @@ public static class WindowsChecks
             Require(wasCancelled && timer.Elapsed < TimeSpan.FromSeconds(8), "Native command cancellation must terminate helper promptly.");
         }
         checks.Add("PASS native static-script cancellation bound");
+        using(var closing=new ReadProcess())
+        {
+            var pending=closing.PowerShellAsync("Start-Sleep -Seconds 30",cancellationToken);var until=Stopwatch.StartNew();while(closing.ActiveProcessIds.Length==0&&until.ElapsedMilliseconds<2000)await Task.Delay(20,cancellationToken);
+            var ids=closing.ActiveProcessIds;Require(ids.Length==1,"Owned helper must start before lifecycle check.");closing.Dispose();try{var result=await pending;Require(!result.Success,"Disposed collector must not return success.");}catch(OperationCanceledException){}
+            foreach(var pid in ids){try{using var collector=Process.GetProcessById(pid);Require(collector.HasExited,"Closing app must not leave owned helper alive.");}catch(ArgumentException){}}
+        }
+        checks.Add("PASS app disposal reaps the exact owned native helper");
 
         var denied = await commands.PowerShellAsync("throw [System.UnauthorizedAccessException]::new('NYAN_FIXTURE_DENIED')", cancellationToken);
         Require(!denied.Success && denied.Code == "access-denied" && !denied.Output.Contains("NYAN_FIXTURE_DENIED", StringComparison.Ordinal), "Access-denied subprocess errors must be classified without exposing raw exception text.");

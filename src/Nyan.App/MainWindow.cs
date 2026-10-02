@@ -630,6 +630,7 @@ public sealed class MainWindow : Window
     internal bool RevealForTest => _reveal.IsChecked == true;
     internal string StatusForTest => _status.Text;
     internal Module CurrentModuleForTest => _module;
+    internal ModuleResult? ResultForTest => _result;
     internal void FilterForTest(string text) => _search.Text = text;
     internal void ShowResultForTest(ModuleResult result) => ShowResult(result);
     internal bool VirtualizedForTest => _table.EnableRowVirtualization && _table.EnableColumnVirtualization;

@@ -10,6 +10,8 @@ internal sealed class ReadProcess : IDisposable
 {
     private readonly SemaphoreSlim _slots = new(2, 2);
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int,Process> _active = new();
+    internal int[] ActiveProcessIds=>_active.Keys.ToArray();
     internal const int OutputLimit = 8 * 1024 * 1024;
 
     internal Task<ReadCommandResult> PowerShellAsync(string sourceScript, CancellationToken cancellationToken, TimeSpan? testTimeout = null)
@@ -83,9 +85,11 @@ internal sealed class ReadProcess : IDisposable
                 foreach (var name in new[] { "DOCKER_HOST", "DOCKER_CONTEXT", "DOCKER_TLS_VERIFY", "DOCKER_CERT_PATH", "DOCKER_CONFIG", "DOCKER_API_VERSION" })
                     process.StartInfo.Environment.Remove(name);
             foreach (var argument in arguments) process.StartInfo.ArgumentList.Add(argument);
+            int ownedPid=0;
             try
             {
                 if (!process.Start()) return new(false, "", "start-failed", false);
+                ownedPid=process.Id;_active[ownedPid]=process;if(linked.IsCancellationRequested)TryKill(process);
                 var stdout = CaptureAsync(process.StandardOutput, OutputLimit, deadline.Token);
                 var stderr = CaptureAsync(process.StandardError, 16 * 1024, deadline.Token);
                 try
@@ -117,6 +121,7 @@ internal sealed class ReadProcess : IDisposable
             }
             catch (Win32Exception e) { return new(false, "", e.NativeErrorCode == 5 ? "access-denied" : "unavailable", false); }
             catch (InvalidOperationException) { return new(false, "", "unavailable", false); }
+            finally { if(ownedPid>0)_active.TryRemove(ownedPid,out _); }
         }
         finally { _slots.Release(); }
     }
@@ -197,7 +202,7 @@ internal sealed class ReadProcess : IDisposable
     [DllImport("wintrust.dll", ExactSpelling = true, PreserveSig = true)]
     private static extern int WinVerifyTrust(IntPtr hwnd, ref Guid action, ref WinTrustData data);
 
-    public void Dispose() => _lifetime.Cancel();
+    public void Dispose(){_lifetime.Cancel();foreach(var process in _active.Values)TryKill(process);}
 }
 
 internal sealed record ReadCommandResult(bool Success, string Output, string Code, bool Truncated);

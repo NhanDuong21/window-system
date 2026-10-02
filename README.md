@@ -10,6 +10,7 @@ Dev: Windows x64 build22631, PowerShell7, SDK .NET10.0.401 local. `./scripts/boo
 ./scripts/dev.ps1
 ./scripts/verify.ps1
 ./scripts/package.ps1
+./scripts/smoke-release.ps1
 ./scripts/open-release.ps1
 ```
 
