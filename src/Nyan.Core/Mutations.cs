@@ -15,7 +15,7 @@ public sealed record MutationPlan(ActionPreview Preview,Dictionary<string,string
 public sealed class Mutations
 {
     readonly AppStore store; readonly MutationFixture? fixture; readonly IWindowsReader? reader; readonly SemaphoreSlim serial=new(1,1);
-    readonly Dictionary<string,MutationPlan> plans=new();
+    readonly System.Collections.Concurrent.ConcurrentDictionary<string,MutationPlan> plans=new();
     public Mutations(AppStore store,MutationFixture? fixture=null,IWindowsReader? reader=null){this.store=store;this.fixture=fixture;this.reader=reader;fixture?.Validate();}
     public static void ValidateEnvironment(string scope,string name,string? value)
     {
@@ -39,7 +39,7 @@ public sealed class Mutations
         ct.ThrowIfCancellationRequested();await serial.WaitAsync(ct);
         try
         {
-            foreach(var expired in plans.Where(x=>x.Value.Preview.ExpiresAt<DateTimeOffset.UtcNow).Select(x=>x.Key).ToArray())plans.Remove(expired);
+            foreach(var expired in plans.Where(x=>x.Value.Preview.ExpiresAt<DateTimeOffset.UtcNow).Select(x=>x.Key).ToArray())plans.TryRemove(expired,out _);
             if(plans.Count>=50)throw new AppException("limit","Quá nhiều preview đang chờ; hãy thử lại sau hai phút.");
             var fields=new Dictionary<string,string>(); List<Dictionary<string,string>>? files=null;
             string title="",target="",before="",after="",warning="",token=Guid.NewGuid().ToString("N");bool undo=false,elevation=false;
@@ -88,10 +88,11 @@ public sealed class Mutations
     }
     public async Task<ActionOutcome> ExecuteAsync(string token,CancellationToken ct)
     {
-        try{await serial.WaitAsync(ct);}catch(OperationCanceledException){return new("cancelled","Đã hủy trước khi thực thi; không thay đổi đối tượng.");}MutationPlan? plan=null;
+        if(fixture==null&&(NativeSecurity.HasPackageIdentity||NativeSecurity.HasAppDataRedirection))return new("failed","Host đang chuyển hướng dữ liệu Windows. Hãy mở EXE từ File Explorer rồi tạo preview mới; chưa thay đổi Windows.");
+        try{await serial.WaitAsync(ct);}catch(OperationCanceledException){var cancelled=new ActionOutcome("cancelled","Đã hủy trước khi thực thi.");return plans.TryRemove(token,out var pending)?RecordOutcome(pending,cancelled):cancelled;}MutationPlan? plan=null;
         try
         {
-            if(!plans.Remove(token,out plan)||plan.Preview.ExpiresAt<DateTimeOffset.UtcNow)throw new AppException("expired","Preview đã hết hạn hoặc đã dùng; tạo preview mới.");
+            if(!plans.TryRemove(token,out plan)||plan.Preview.ExpiresAt<DateTimeOffset.UtcNow)throw new AppException("expired","Preview đã hết hạn hoặc đã dùng; tạo preview mới.");
             ct.ThrowIfCancellationRequested();ActionOutcome result;
             if(plan.Preview.RequiresElevation)result=await Elevation.RunAsync(plan,ct);
             else result=await ExecutePlanAsync(plan,ct);
@@ -105,6 +106,7 @@ public sealed class Mutations
     }
     public async Task<ActionOutcome> ExecutePlanAsync(MutationPlan plan,CancellationToken ct)
     {
+        if(fixture==null&&(NativeSecurity.HasPackageIdentity||NativeSecurity.HasAppDataRedirection))return new("failed","Host đang chuyển hướng dữ liệu Windows. Hãy mở EXE từ File Explorer; chưa thay đổi Windows.");
         if(plan.Preview.ExpiresAt<DateTimeOffset.UtcNow)throw new AppException("expired","Yêu cầu đã hết hạn; không thay đổi hệ thống.");
         var fields=plan.Fields;
         switch(plan.Preview.Kind)
@@ -196,10 +198,10 @@ public sealed class Mutations
         if(required.Length==0||required.Any(key=>!f.ContainsKey(key)))throw new AppException("backup","Bản sao thiếu dữ liệu hoặc không hỗ trợ hoàn tác.");
         switch(f.GetValueOrDefault("type"))
         {
-            case "environment":ValidateEnvironment(f["scope"],f["name"],f["value"]);if(!bool.TryParse(f["exists"],out _)||!Enum.TryParse<RegistryValueKind>(f["kind"],out var envKind)||envKind is not (RegistryValueKind.String or RegistryValueKind.ExpandString))throw new AppException("backup","Bản sao biến không hợp lệ.");if(Fingerprint(ReadEnvironment(f["scope"],f["name"]))!=f["afterFingerprint"])throw new AppException("conflict","Biến hiện tại đã thay đổi; không ghi đè bản sao.");break;
+            case "environment":ValidateEnvironment(f["scope"],f["name"],f["value"]);if(!bool.TryParse(f["exists"],out _)||f["kind"] is not ("String" or "ExpandString"))throw new AppException("backup","Bản sao biến không hợp lệ.");if(Fingerprint(ReadEnvironment(f["scope"],f["name"]))!=f["afterFingerprint"])throw new AppException("conflict","Biến hiện tại đã thay đổi; không ghi đè bản sao.");break;
             case "startup-run":
                 var allowed=fixture?.RegistryKey+@"\Run"??@"Software\Microsoft\Windows\CurrentVersion\Run";if(f["key"]!=allowed)throw new AppException("scope","Backup Run ngoài phạm vi.");
-                if(f["name"].Length is 0 or >16383||f["name"].Contains('\0')||f["value"].Contains('\0')||!Enum.TryParse<RegistryValueKind>(f["registryKind"],out var runKind)||runKind is not (RegistryValueKind.String or RegistryValueKind.ExpandString)||!Enum.TryParse<RegistryView>(f["view"],out var runView)||runView is not (RegistryView.Registry32 or RegistryView.Registry64))throw new AppException("backup","Bản sao Run có tên/kiểu không hợp lệ; không ghi registry.");
+                if(f["name"].Length is 0 or >16383||f["name"].Contains('\0')||f["value"].Contains('\0')||f["registryKind"] is not ("String" or "ExpandString")||f["view"] is not ("Registry32" or "Registry64"))throw new AppException("backup","Bản sao Run có tên/kiểu không hợp lệ; không ghi registry.");
                 using(var hive=RegistryKey.OpenBaseKey(RegistryHive.CurrentUser,Enum.Parse<RegistryView>(f["view"])))using(var key=hive.OpenSubKey(f["key"]))if(key?.GetValue(f["name"])!=null)throw new AppException("conflict","Run đã có giá trị mới; không ghi đè.");break;
             case "startup-file":if(f.GetValueOrDefault("contents","").Length>6*1024*1024||Convert.FromBase64String(f["contents"]).Length>4*1024*1024)throw new AppException("backup","Bản sao file Startup vượt giới hạn.");var root=fixture?.Root??Environment.GetFolderPath(Environment.SpecialFolder.Startup);if(!NativeSecurity.IsWithin(f["path"],root)||Path.GetDirectoryName(f["path"])!=Path.GetFullPath(root))throw new AppException("scope","Backup Startup ngoài phạm vi.");NativeSecurity.CheckLocalPath(f["path"],true);if(File.Exists(f["path"]))throw new AppException("conflict","File Startup đã tồn tại; không ghi đè.");break;
             default:throw new AppException("undo","Bản sao này không hỗ trợ hoàn tác tự động.");
@@ -272,7 +274,7 @@ public static class Elevation
     {
         if(plan.Preview.Kind is not (ActionKind.SetEnvironment or ActionKind.DeleteEnvironment or ActionKind.Undo or ActionKind.StartService or ActionKind.StopService or ActionKind.RestartService))throw new AppException("elevation","Action này không được nâng quyền.");
         Directory.CreateDirectory(RequestRoot);NativeSecurity.CheckLocalPath(RequestRoot);var id=Guid.NewGuid().ToString("N");var request=Path.Combine(RequestRoot,id+".request");var result=Path.Combine(RequestRoot,id+".result");
-        File.WriteAllBytes(request,NativeSecurity.Protect(JsonSerializer.SerializeToUtf8Bytes(plan)));var active=Path.Combine(RequestRoot,id+".active");File.WriteAllText(active,"");
+        using(var parent=new DirectoryLease(RequestRoot))using(var stream=new FileStream(request,FileMode.CreateNew,FileAccess.Write,FileShare.None)){stream.Write(NativeSecurity.Protect(JsonSerializer.SerializeToUtf8Bytes(plan)));stream.Flush(true);}var active=Path.Combine(RequestRoot,id+".active");using(var parent=new DirectoryLease(RequestRoot))using(var lease=new FileStream(active,FileMode.CreateNew,FileAccess.Write,FileShare.None))lease.Flush(true);
         try
         {
             var executable=Environment.ProcessPath??throw new AppException("executable","Không xác minh được executable của app.");
@@ -280,8 +282,7 @@ public static class Elevation
             using var timeout=CancellationTokenSource.CreateLinkedTokenSource(ct);timeout.CancelAfter(TimeSpan.FromMinutes(2));
             try{await process.WaitForExitAsync(timeout.Token);}catch(OperationCanceledException){return new("failed","Helper chưa xác nhận kết quả. Không lặp thao tác; tải lại để kiểm tra trạng thái Windows.");}
             if(!File.Exists(result))return new("failed","Helper không trả kết quả; thao tác chưa được xác nhận.");
-            if(new FileInfo(result).Length>65536)throw new AppException("result","Kết quả helper vượt giới hạn.");
-            return JsonSerializer.Deserialize<ActionOutcome>(NativeSecurity.Unprotect(File.ReadAllBytes(result)))??new("failed","Kết quả helper không hợp lệ.");
+            return JsonSerializer.Deserialize<ActionOutcome>(NativeSecurity.Unprotect(NativeSecurity.ReadBounded(result,65536)))??new("failed","Kết quả helper không hợp lệ.");
         }
         catch(Win32Exception e)when(e.NativeErrorCode==1223){return new("cancelled","Người dùng đã hủy UAC; không thay đổi hệ thống.");}
         finally{if(File.Exists(active))File.Delete(active);if(File.Exists(request))File.Delete(request);if(File.Exists(result))File.Delete(result);}
@@ -290,11 +291,10 @@ public static class Elevation
     {
         if(!Regex.IsMatch(id,"^[a-f0-9]{32}$"))throw new AppException("request","Mã yêu cầu không hợp lệ.");if(!NativeSecurity.IsAdministrator)throw new AppException("uac","Helper cần quyền Windows đã xác nhận.");
         NativeSecurity.CheckLocalPath(RequestRoot);var path=Path.Combine(RequestRoot,id+".request");NativeSecurity.CheckLocalPath(path);var processing=Path.Combine(RequestRoot,id+".consumed");
-        File.Move(path,processing,false);
+        using(var parent=new DirectoryLease(RequestRoot))File.Move(path,processing,false);
         try
         {
-            if(new FileInfo(processing).Length>1024*1024)throw new AppException("request","Yêu cầu vượt giới hạn.");
-            var plan=JsonSerializer.Deserialize<MutationPlan>(NativeSecurity.Unprotect(File.ReadAllBytes(processing)))??throw new AppException("request","Yêu cầu không hợp lệ.");
+            var plan=JsonSerializer.Deserialize<MutationPlan>(NativeSecurity.Unprotect(NativeSecurity.ReadBounded(processing,1024*1024)))??throw new AppException("request","Yêu cầu không hợp lệ.");
             if(plan.Preview.ExpiresAt<DateTimeOffset.UtcNow||plan.Preview.ExpiresAt>DateTimeOffset.UtcNow.AddMinutes(2)||!plan.Preview.RequiresElevation||plan.Files!=null)throw new AppException("expiry","Yêu cầu hết hạn hoặc ngoài phạm vi.");
             if(plan.Preview.Kind is ActionKind.SetEnvironment or ActionKind.DeleteEnvironment){if(plan.Fields.GetValueOrDefault("scope")!="Machine")throw new AppException("scope","Helper chỉ sửa System scope.");Mutations.ValidateEnvironment("Machine",plan.Fields["name"],plan.Fields["newValue"]);}
             else if(plan.Preview.Kind==ActionKind.Undo){if(plan.Fields.GetValueOrDefault("type")!="environment"||plan.Fields.GetValueOrDefault("scope")!="Machine")throw new AppException("scope","Helper chỉ hoàn tác biến System.");}
@@ -308,5 +308,5 @@ public static class Elevation
         if(!Regex.IsMatch(id,"^[a-f0-9]{32}$")||plan.Preview.ExpiresAt<DateTimeOffset.UtcNow)throw new AppException("expired","Yêu cầu đã hết hạn hoặc bị hủy; không thay đổi hệ thống.");
         NativeSecurity.CheckLocalPath(Path.Combine(RequestRoot,id+".active"));
     }
-    public static void WriteResult(string id,ActionOutcome result){if(!Regex.IsMatch(id,"^[a-f0-9]{32}$")||!File.Exists(Path.Combine(RequestRoot,id+".active")))return;NativeSecurity.CheckLocalPath(RequestRoot);File.WriteAllBytes(Path.Combine(RequestRoot,id+".result"),NativeSecurity.Protect(JsonSerializer.SerializeToUtf8Bytes(result)));}
+    public static void WriteResult(string id,ActionOutcome result){if(!Regex.IsMatch(id,"^[a-f0-9]{32}$")||!File.Exists(Path.Combine(RequestRoot,id+".active")))return;using var parent=new DirectoryLease(RequestRoot);using var stream=new FileStream(Path.Combine(RequestRoot,id+".result"),FileMode.CreateNew,FileAccess.Write,FileShare.None);stream.Write(NativeSecurity.Protect(JsonSerializer.SerializeToUtf8Bytes(result)));stream.Flush(true);}
 }

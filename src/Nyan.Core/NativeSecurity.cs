@@ -48,7 +48,25 @@ public static class NativeSecurity
         }
         finally { Marshal.FreeHGlobal(input.Data); if(output.Data!=IntPtr.Zero) LocalFree(output.Data); }
     }
-    public static string LocalRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"NyanControlCenter");
+    [DllImport("shell32.dll")]static extern int SHGetKnownFolderPath(ref Guid id,uint flags,IntPtr token,out IntPtr path);
+    [DllImport("kernel32.dll",CharSet=CharSet.Unicode)]static extern int GetCurrentPackageFullName(ref uint length,StringBuilder? name);
+    public static bool HasPackageIdentity {get{uint length=0;return GetCurrentPackageFullName(ref length,null)!=15700;}}
+    static readonly Lazy<(string Root,bool Redirected)> DataRoot=new(ResolveDataRoot);
+    public static string LocalRoot=>DataRoot.Value.Root;
+    public static bool HasAppDataRedirection=>DataRoot.Value.Redirected;
+    static (string Root,bool Redirected) ResolveDataRoot()
+    {
+            // Ask Windows for its actual redirection target when a desktop host
+            // has package identity. Do not weaken native final-path checks.
+            var id=new Guid("F1B32785-6FBA-4FCF-9D55-7B8E7F157091");var error=SHGetKnownFolderPath(ref id,0x40000,IntPtr.Zero,out var pointer);
+            if(error!=0)Marshal.ThrowExceptionForHR(error);
+            try
+            {
+                var root=Path.Combine(Marshal.PtrToStringUni(pointer)??throw new AppException("appdata","Không đọc được thư mục dữ liệu local."),"NyanControlCenter");
+                var resolved=DirectoryLease.ResolveAppRoot(root);
+                return (resolved,!resolved.Equals(root,StringComparison.OrdinalIgnoreCase));
+            }finally{Marshal.FreeCoTaskMem(pointer);}
+    }
     public static void CheckLocalPath(string path, bool allowMissingLeaf=false)
     {
         var full=Path.GetFullPath(path);
@@ -91,6 +109,11 @@ public static class NativeSecurity
     }
     [DllImport("user32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern IntPtr SendMessageTimeout(IntPtr h,uint msg,IntPtr w,string l,uint flags,uint timeout,out IntPtr result);
     public static void NotifyEnvironment() => SendMessageTimeout(new IntPtr(0xffff),0x1a,IntPtr.Zero,"Environment",2,1000,out _);
+    public static byte[] ReadBounded(string path,int maximum)
+    {
+        using var lease=new FileLease(path,readContents:true);if(lease.Length>maximum)throw new AppException("size","File vượt giới hạn an toàn.");var bytes=new byte[(int)lease.Length];int offset=0;
+        while(offset<bytes.Length){int read=RandomAccess.Read(lease.Handle,bytes.AsSpan(offset),offset);if(read==0)throw new AppException("read","File không đầy đủ; thao tác bị chặn.");offset+=read;}return bytes;
+    }
 }
 
 public sealed class FileLease : IDisposable
@@ -105,10 +128,10 @@ public sealed class FileLease : IDisposable
     public long Length {get;}
     public long WriteTicks {get;}
     public string Path {get; private set;}
-    public FileLease(string path,bool mutate=false)
+    public FileLease(string path,bool mutate=false,bool readContents=false)
     {
         NativeSecurity.CheckLocalPath(path); Path=System.IO.Path.GetFullPath(path);
-        Handle=CreateFile(Path,mutate ? 0x10081u : 0x80u,1,IntPtr.Zero,3,0x00200000,IntPtr.Zero);
+        Handle=CreateFile(Path,mutate ? 0x10081u : readContents?0x81u:0x80u,1,IntPtr.Zero,3,0x00200000,IntPtr.Zero);
         if(Handle.IsInvalid) throw new Win32Exception(Marshal.GetLastWin32Error());
         var finalPath=new StringBuilder(32768);var finalSize=GetFinalPathNameByHandle(Handle,finalPath,32768,0);var final=finalPath.ToString();if(final.StartsWith(@"\\?\"))final=final[4..];
         if(finalSize==0||finalSize>=32768||!final.Equals(Path,StringComparison.OrdinalIgnoreCase)){Dispose();throw new AppException("race","Đường dẫn native không còn khớp; thao tác bị chặn.");}
@@ -120,16 +143,33 @@ public sealed class FileLease : IDisposable
     }
     public void RenameTo(string destination)
     {
-        using var parent=new DirectoryLease(System.IO.Path.GetDirectoryName(destination)!);
-        var filename=Encoding.Unicode.GetBytes(System.IO.Path.GetFileName(destination));
-        var buffer=Marshal.AllocHGlobal(20+filename.Length);
+        var full=System.IO.Path.GetFullPath(destination);
+        var leaf=System.IO.Path.GetFileName(full);
+        if(string.IsNullOrEmpty(leaf)||leaf.Contains(':'))throw new AppException("path","Tên file đích không hợp lệ hoặc là alternate data stream.");
+        NativeSecurity.CheckLocalPath(full,true);
+        // Keep the verified parent open without FILE_SHARE_DELETE while resolving the
+        // absolute destination. This Windows build rejects a non-null RootDirectory
+        // for FileRenameInfo even with a correctly terminated relative name.
+        using var parent=new DirectoryLease(System.IO.Path.GetDirectoryName(full)!);
+        var filename=Encoding.Unicode.GetBytes(full);
+        var rootOffset=IntPtr.Size==8?8:4;
+        var lengthOffset=rootOffset+IntPtr.Size;
+        var nameOffset=lengthOffset+sizeof(uint);
+        var bufferSize=checked(nameOffset+filename.Length+sizeof(char));
+        var buffer=Marshal.AllocHGlobal(bufferSize);
         try
         {
-            for(int i=0;i<20;i++) Marshal.WriteByte(buffer,i,0);
-            Marshal.WriteIntPtr(buffer,8,parent.Handle.DangerousGetHandle());
-            Marshal.WriteInt32(buffer,16,filename.Length); Marshal.Copy(filename,0,buffer+20,filename.Length);
-            if(!SetFileInformationByHandle(Handle,3,buffer,(uint)(20+filename.Length))) throw new Win32Exception(Marshal.GetLastWin32Error());
-            Path=System.IO.Path.GetFullPath(destination);
+            // ReplaceIfExists=false, RootDirectory=NULL. FileNameLength excludes
+            // the UTF-16 NUL, but the Win32 path conversion requires its storage.
+            for(int i=0;i<nameOffset;i++)Marshal.WriteByte(buffer,i,0);
+            Marshal.WriteInt32(buffer,lengthOffset,filename.Length);
+            Marshal.Copy(filename,0,buffer+nameOffset,filename.Length);
+            Marshal.WriteInt16(buffer,nameOffset+filename.Length,0);
+            if(!SetFileInformationByHandle(Handle,3,buffer,(uint)bufferSize))throw new Win32Exception(Marshal.GetLastWin32Error());
+            Path=full;
+            var finalPath=new StringBuilder(32768);var count=GetFinalPathNameByHandle(Handle,finalPath,32768,0);var final=finalPath.ToString();if(final.StartsWith(@"\\?\"))final=final[4..];
+            if(count==0||count>=32768||!final.Equals(full,StringComparison.OrdinalIgnoreCase))throw new AppException("race","Đường dẫn sau đổi tên không còn khớp; dừng thao tác tiếp theo.");
+            GC.KeepAlive(parent);
         } finally {Marshal.FreeHGlobal(buffer);}
     }
     public void Delete()
@@ -142,13 +182,39 @@ public sealed class FileLease : IDisposable
 
 public sealed class DirectoryLease : IDisposable
 {
+    [StructLayout(LayoutKind.Sequential)]struct DirectoryInfoNative {public uint Attributes;public System.Runtime.InteropServices.ComTypes.FILETIME Creation,Access,Write;public uint Volume,SizeHigh,SizeLow,Links,IndexHigh,IndexLow;}
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern SafeFileHandle CreateFile(string path,uint access,uint share,IntPtr security,uint disposition,uint flags,IntPtr template);
+    [DllImport("kernel32.dll",SetLastError=true)]static extern bool GetFileInformationByHandle(SafeFileHandle handle,out DirectoryInfoNative info);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern uint GetFinalPathNameByHandle(SafeFileHandle h,StringBuilder path,uint count,uint flags);
     public SafeFileHandle Handle{get;}
+    internal static string ResolveAppRoot(string expected)
+    {
+        // Some Desktop Bridge hosts keep the logical LocalAppData path even
+        // with RETURN_FILTER_REDIRECTION_TARGET. Resolve only our fixed app
+        // directory. Descendants can lack package identity while Windows still
+        // redirects file writes. Detect the mapping from the acquired handle.
+        NativeSecurity.CheckLocalPath(expected,true);Directory.CreateDirectory(expected);NativeSecurity.CheckLocalPath(expected);
+        using var handle=CreateFile(expected,0x81,3,IntPtr.Zero,3,0x02200000,IntPtr.Zero);if(handle.IsInvalid)throw new Win32Exception(Marshal.GetLastWin32Error());
+        if(!GetFileInformationByHandle(handle,out var info))throw new Win32Exception(Marshal.GetLastWin32Error());
+        if((info.Attributes&0x10)==0||(info.Attributes&(0x400|0x1000|0x40000|0x400000))!=0)throw new AppException("attributes","Thư mục dữ liệu app không an toàn.");
+        var buffer=new StringBuilder(32768);var count=GetFinalPathNameByHandle(handle,buffer,32768,0);var final=buffer.ToString();if(final.StartsWith(@"\\?\"))final=final[4..];
+        var packages=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"Packages");
+        var relative=Path.GetRelativePath(packages,final).Replace(Path.AltDirectorySeparatorChar,Path.DirectorySeparatorChar);
+        var packageCache=System.Text.RegularExpressions.Regex.IsMatch(relative,@"^[A-Za-z0-9.-]+_[A-Za-z0-9]{13}\\LocalCache\\Local\\NyanControlCenter$",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if(count==0||count>=32768||(!final.Equals(expected,StringComparison.OrdinalIgnoreCase)&&!packageCache))throw new AppException("appdata","Đích chuyển hướng không thuộc thư mục dữ liệu app được hỗ trợ.");
+        NativeSecurity.CheckLocalPath(final);return final;
+    }
     public DirectoryLease(string directory)
     {
         NativeSecurity.CheckLocalPath(directory);var expected=Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory));
-        Handle=CreateFile(expected,0x80,1,IntPtr.Zero,3,0x02200000,IntPtr.Zero);if(Handle.IsInvalid)throw new Win32Exception(Marshal.GetLastWin32Error());
+        // FILE_READ_ATTRIBUTES alone is metadata access and does not participate
+        // in share/delete arbitration. Include FILE_LIST_DIRECTORY to pin the
+        // verified directory against rename/deletion for this lease's lifetime.
+        // Share directory reads/writes so the rename can add its target entry;
+        // deliberately exclude FILE_SHARE_DELETE, which protects the parent.
+        Handle=CreateFile(expected,0x81,3,IntPtr.Zero,3,0x02200000,IntPtr.Zero);if(Handle.IsInvalid)throw new Win32Exception(Marshal.GetLastWin32Error());
+        if(!GetFileInformationByHandle(Handle,out var info)){var error=Marshal.GetLastWin32Error();Dispose();throw new Win32Exception(error);}
+        if((info.Attributes&0x10)==0||(info.Attributes&(0x400|0x1000|0x40000|0x400000))!=0){Dispose();throw new AppException("attributes","Thư mục native có liên kết/cloud hoặc không phải thư mục; thao tác bị chặn.");}
         var buffer=new StringBuilder(32768);var count=GetFinalPathNameByHandle(Handle,buffer,32768,0);var final=buffer.ToString();if(final.StartsWith(@"\\?\"))final=final[4..];
         if(count==0||count>=32768||!Path.TrimEndingDirectorySeparator(final).Equals(expected,StringComparison.OrdinalIgnoreCase)){Dispose();throw new AppException("race","Thư mục native không còn khớp; thao tác bị chặn.");}
     }

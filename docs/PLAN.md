@@ -16,7 +16,7 @@ Mỗi phase: NOT_STARTED → IN_PROGRESS → IMPLEMENTED → VERIFIED hoặc BLO
 | 10 | Scope, secrets, PATH order, conflict, DPAPI undo, narrow UAC | 01,14 | VERIFIED |
 | 11 | Adapter/IP/DNS local only | 01 | VERIFIED |
 | 12 | Snapshot create/diff/validated import/export DPAPI | 03,04,08 | VERIFIED |
-| 13 | Temp scan/select/preview; identity recheck; Recycle Bin | 06,14 | NOT_STARTED |
+| 13 | Temp scan/select/preview; identity recheck; Recycle Bin | 06,14 | VERIFIED |
 | 14 | Outcome history, bounds/retention/redaction | 01 | NOT_STARTED |
 | 15 | Ctrl+K cached search/navigation, danger preview only | 02–14 | NOT_STARTED |
 | 16 | Independent diff security review/regressions | 01–15 | NOT_STARTED |

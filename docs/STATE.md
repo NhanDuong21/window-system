@@ -19,3 +19,4 @@ Phase 09 — VERIFIED: Owned localhost TCP/UDP native checks, v4/v6, PID time st
 Phase 10 — VERIFIED: Fixture HKCU env/PATH raw order/type, stale/cancel/DPAPI undo; System UAC còn manual. Source nền 3588d39; checkpoint commit tìm bằng git log --grep=phase10.
 Phase 11 — VERIFIED: NetworkInterface thật, IP/DNS che mặc định, refresh; không public network requests. Source nền 3588d39; checkpoint commit tìm bằng git log --grep=phase11.
 Phase 12 — VERIFIED: Store/Core snapshot create-diff-export-import, coverage partial, schema/size/DPAPI; cùng account. Source nền 3588d39; checkpoint commit tìm bằng git log --grep=phase12.
+Phase 13 — VERIFIED: Cleanup fixture preview/change/cancel/native recycle; FileLease rename6PASS, RecycleFile5PASS gồm restore đúng bin item sở hữu. Native directory pin, no-overwrite, cloud/reparse/identity recheck. Không cleanup Temp User thật. Source sửa native mutation boundary trong commit phase13.
