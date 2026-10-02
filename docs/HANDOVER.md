@@ -1,4 +1,35 @@
-# Nghiệm thu hiện tại — Nyan Control Center 1.0.1
+# Nghiệm thu hiện tại — Nyan Control Center 1.0.2
+
+**PARTIAL; cần bạn chạy lại launcher từ Explorer.** Bản 1.0.2 sửa lỗi JSON của lần nghiệm thu 1.0.1 bạn vừa báo. Launcher vẫn là `Nghiem-Thu-Nyan.cmd`; không sửa/xóa evidence cũ, không reset state hoặc đổi policy. Các workflow production Windows/UAC vẫn NOT_RUN.
+
+## Lỗi Explorer đã tái hiện và sửa
+
+Evidence `.evidence/acceptance-9d81694925794325b328483b70e25b0a` giữ nguyên: USER_DECLARED Explorer, artifact 1.0.1/source 9c72e4b; launch ghi parent elevated=true rồi main child=false. `result.txt` FAIL JsonException, chưa có read-context/persistence/performance. Không tính lần này là native smoke PASS; package/AppData context ngoài host chưa được ghi lại.
+
+`ownership.json` do Windows PowerShell 5.1 tạo bắt đầu bằng **EF-BB-BF** (UTF-8 BOM). Parser 1.0.1 đọc trực tiếp byte bằng JsonSerializer nên từ chối marker này. Smoke trước chạy dưới PS7 tạo JSON không BOM, vì vậy bỏ sót tương thích của launcher PS5.1.
+
+Sửa: đọc JSON có giới hạn qua native handle, chấp nhận đúng một UTF-8 BOM ở đầu; dùng cho ownership và service manifests. Raw byte reader/DPAPI, size/path/reparse guards không đổi. JSON sai định dạng, quá giới hạn, BOM kép/UTF16 vẫn bị từ chối. Failures ghi rõ stage và launcher in chi tiết read result. Bộ test cũng sửa imported FAIL bị bỏ qua trong exit/summary; probe chủ động tạo một FAIL và kiểm exit1, không tính sentinel này thành lỗi của suite thật.
+
+## Kiểm chứng mới — đúng artifact 1.0.2
+
+- `.evidence/verify-38a8572508f84fae96fac521b552988f`: **62 PASS / 0 FAIL / 0 SKIP**, gồm 9 JSON regressions (writer PowerShell 5.1 thật, tái hiện parser cũ, BOM/non-BOM/Vietnamese, service array/numeric, malformed/size/encoding), 13 service mô phỏng, 31 store/files riêng, 9 read-only. WPF 46 PASS; Release build 0 warnings/errors. `expected-failure-probe.txt` là failure sentinel cố ý, exit 1 đã được kiểm.
+- `.evidence/ps51-json-fix-88cb5eeb645d4ba7a657b583e2cccdec`: syntax của các script đổi được parse bằng Windows PowerShell 5.1; không mở Explorer hoặc mutate Windows.
+- `.evidence/release-0c38f0866cb047089990133db0384c1e`: **artifact 1.0.2** với ownership JSON BOM; WPF 46, 14 native/light-dark, context và private persistence/backup/restore PASS. Main elevated=false/package=false/redirection=true trong host. Tuy nhiên script smoke **exit 1 vì idle CPU 2.1215% > budget 1%**; first frame 1023ms, working 176.1MiB, DPI 100%. Giữ nguyên FAIL hiệu năng, không gọi toàn bộ lần smoke này PASS.
+- `.evidence/performance-recheck-9a151b08866a423793e6ed66aed282fe`: kiểm lại **một lần cùng artifact/ngưỡng** vì phép đo trên thất bại; native read PASS, performance PASS (815ms, idle CPU 0.0130%, working 153.3MiB, private 103.7MiB, DPI 100%). Có một phép đo FAIL và một PASS; nguyên nhân biến động CPU chưa xác định, không tuyên bố mọi điều kiện hiệu năng ổn định. Không chạy vòng lặp để tìm PASS.
+
+BOM fix đã được chứng minh trong host bằng đúng wire format PS5.1. Các scope native read/fixture/private store của capability matrix baseline phía dưới giữ nguyên; cột production Windows vẫn NOT_RUN. Việc bạn đã khai báo mở Explorer 1.0.1 không thay cho nghiệm thu 1.0.2. Mở launcher lại, kiểm dòng **Release 1.0.2**, rồi chờ read smoke và hai UI sessions. Kết thúc chỉ đọc bằng Enter; gửi tên thư mục evidence mới.
+
+## Artifact và Git 1.0.2
+
+Source **e2c964d700856968fe86ff23daabaece5eea00c0**, folder `artifacts/NyanControlCenter-1.0.2-win-x64`, ZIP cùng tên; self-contained/unsigned. Đã kiểm SHA256 của toàn bộ 403 file trong manifest và ZIP. Launcher đọc release.json đã trỏ 1.0.2. Hash EXE/ZIP 1.0.0, 1.0.1 và ownership/result của evidence lỗi giữ nguyên; commit bàn giao sau chỉ docs, không phải source artifact.
+
+EXE SHA256: `0D522E5A8F3B00A94502D9C5EE98B3603C5BA83505C72A750AAC31552EA5895D`.
+
+ZIP SHA256: `BF33F5079CFB00776F0D737A430035F94739273A979B7EA3173CBCE05D4DF93B`.
+
+Không Windows configuration/resource mutation mới trong lượt sửa lỗi này. Chỉ test writer/build/read-only processes và app/file/evidence riêng; không dùng lại GUID lỗi để overwrite kết quả. Các capture processes đã kết thúc. PR #1 branch nyan/control-center giữ draft, không merge. User retry ngoài host/UAC/production vẫn chờ; không tìm đường mở ngoài host thay bạn.
+
+## Baseline nghiệm thu — 1.0.1
 
 **PARTIAL**. Phần tự động an toàn hoàn tất; Explorer, persistence ngoài host và production mutation/UAC còn **WAITING_FOR_USER / NOT_RUN**. Không khởi động lại 18 phase. Các phần 1.0.0 phía dưới giữ làm baseline lịch sử, không phải số đo/source của 1.0.1.
 

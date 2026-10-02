@@ -1,5 +1,7 @@
 # Review
 
+Patch1.0.2: actual user Explorer evidence tái hiện JSON UTF8 BOM của PS5.1 bị parser1.0.1 từ chối. Bounded/native JSON reader chỉ bỏ một leading UTF8 marker; raw DPAPI/guard giữ nguyên. 9 regressions bằng writer PS5.1 thật, safe suite62PASS/WPF46PASS; artifact BOM/native/private persistence PASS. Imported FAIL giờ làm harness exit1 (expected-failure probe). First performance sample FAIL CPU2.12%; một recheck PASS0.013%, giữ cả hai và chưa khẳng định ổn định. Đây là Lead diagnosis/regression, không gọi review độc lập hoặc Explorer1.0.2 PASS. HANDOVER/STATE ghi source/hash/evidence và user retry.
+
 Lượt nghiệm thu1.0.1: Lead tự tái hiện service outcome bằng adapter mô phỏng, không gọi đây là review độc lập. Stop accepted timeout, restart stop thành công/start lỗi, cancel sau send và helper unconfirmed trước đây mất chi tiết/unknown. Sửa partial với native reread/completed steps; stale không gửi command, không repair. 13 regression PASS trong safe suite53; UI46 giữ selected stable row khi refresh. Actual artifact native read/private persistence PASS, production SCM/UAC/resource workflows **NOT_RUN**. Chi tiết mới và capability matrix ở HANDOVER; các kết quả independent review dưới đây thuộc baseline trước.
 
 Worker storage review độc lập phần Lead native/policy và chạy fixture riêng để tái hiện findings. Reader/UI tự kiểm phần họ, không gọi self-review độc lập.

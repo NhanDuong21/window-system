@@ -1,4 +1,18 @@
-# Nghiệm thu bổ sung 1.0.1 — 2026-10-03
+# Nghiệm thu hiện tại 1.0.2 — sửa lỗi PS5.1 BOM
+
+**PARTIAL / WAITING_FOR_USER_RETEST**. User khai báo mở Explorer1.0.1, evidence `.evidence/acceptance-9d81694925794325b328483b70e25b0a`: parent elevated=true/main=false, FAIL JsonException trước read-context/persistence. Root manifest có UTF-8 BOM EF-BB-BF do PS5.1; smoke PS7 trước đó không tạo BOM nên bỏ sót. Giữ nguyên evidence lỗi, chưa xác nhận package/AppData context hoặc native smoke của lượt Explorer.
+
+Source fix/package **e2c964d700856968fe86ff23daabaece5eea00c0**, artifact1.0.2. JSON reader nhận đúng một BOM, giữ native bounds/path guards, không sửa raw DPAPI reader. Stage/error rõ hơn; imported FAIL trong harness giờ làm exit thất bại, sentinel probe exit1. Launcher release.json trỏ1.0.2; giữ1.0.0/1.0.1, không reset dữ liệu hoặc policy.
+
+Safe verify `.evidence/verify-38a8572508f84fae96fac521b552988f`: **62 PASS / 0 FAIL / 0 SKIP**, trong đó 9 JSON regressions dùng Windows PowerShell 5.1 thật; WPF 46 PASS, build 0 warnings/errors. PS5.1 syntax evidence `.evidence/ps51-json-fix-88cb5eeb645d4ba7a657b583e2cccdec`.
+
+Artifact BOM native/private persistence PASS tại `.evidence/release-0c38f0866cb047089990133db0384c1e`; main=false/package=false/redirection=true. Script smoke exit1 vì idleCPU2.1215% >1%, giữ FAIL. Một recheck cùng artifact/ngưỡng `.evidence/performance-recheck-9a151b08866a423793e6ed66aed282fe` native/performance PASS:815ms/0.0130%/153.3MiB/DPI100%. Không xóa phép đo đầu hoặc khẳng định nguyên nhân CPU/độ ổn định đã giải quyết.
+
+EXE SHA256 `0D522E5A8F3B00A94502D9C5EE98B3603C5BA83505C72A750AAC31552EA5895D`; ZIP `BF33F5079CFB00776F0D737A430035F94739273A979B7EA3173CBCE05D4DF93B`. Đã kiểm toàn bộ 403 manifest hashes, ZIP và hash artifact/evidence cũ; capture processes đã kết thúc. Commit sau source chỉ docs.
+
+Không Windows mutation/resource mới; chỉ own app/files/read-only/build processes. Guard giữ nguyên, production Windows/UAC NOT_RUN. Bước tiếp theo: bạn mở lại Nghiem-Thu-Nyan.cmd từ Explorer, kiểm Release1.0.2 và gửi evidence mới. PR#1 giữ draft, không merge; không chạy thay user ngoài host.
+
+## Baseline1.0.1 — 2026-10-03
 
 **PARTIAL / WAITING_FOR_USER**: tự động an toàn xong; Explorer, live user persistence ngoài host và production Windows mutation/UAC chưa chạy. Không bắt đầu lại 18 phase; bảng phase lịch sử phía dưới giữ scope1.0.0. Capability matrix hiện hành ở HANDOVER.md.
 
