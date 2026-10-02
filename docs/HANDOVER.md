@@ -1,6 +1,24 @@
 # Nghiệm thu hiện tại — Nyan Control Center 1.0.2
 
-**PARTIAL; cần bạn chạy lại launcher từ Explorer.** Bản 1.0.2 sửa lỗi JSON của lần nghiệm thu 1.0.1 bạn vừa báo. Launcher vẫn là `Nghiem-Thu-Nyan.cmd`; không sửa/xóa evidence cũ, không reset state hoặc đổi policy. Các workflow production Windows/UAC vẫn NOT_RUN.
+**PARTIAL; lượt Explorer 1.0.2 đã qua native read và persistence riêng, còn UI và hiệu năng.** Bản 1.0.2 sửa lỗi JSON của lần nghiệm thu 1.0.1 bạn vừa báo. Launcher vẫn là `Nghiem-Thu-Nyan.cmd`; không sửa/xóa evidence cũ, không reset state hoặc đổi policy. Các workflow production Windows/UAC vẫn NOT_RUN.
+
+## Evidence người dùng bổ sung — Explorer 1.0.2
+
+Người dùng cung cấp `.evidence/acceptance-858cceaea5ce4551936a796aaa272bc7`. Ownership/root, source **e2c964d700856968fe86ff23daabaece5eea00c0** và EXE SHA256 khớp artifact 1.0.2. `entry-declaration.json` ghi **USER_DECLARED Explorer**, không suy nguồn mở từ process. Read context lúc 04:44:18 +07 ngày 2026-10-03: main PID 1668, **elevated=false, packaged=false, redirectedAppData=false**. Session context cũng ghi cả ba false. Đây là bằng chứng mới ngoài host của lượt do người dùng chủ động mở, không thay bằng capture của agent.
+
+| Khả năng trong lượt này | Kết quả mới |
+|---|---|
+| Ownership JSON BOM, artifact identity | PASS; lỗi JsonException của 1.0.1 không tái diễn |
+| Native read và 14 page captures | `result.txt` PASS; Services 321/Ports 222 Ready; Dashboard/Applications/Startup/Processes/DevTools/Cleanup vẫn Partial; Storage Empty trước chọn folder |
+| Persistence/backup/restore dữ liệu app | PASS ở store GUID riêng, cùng profile; firstLight/reload/restored đều true. Không chứng minh live state hoặc phục hồi sau reinstall |
+| Mở giao diện user thường ngoài host | Session mở thật, USER_DECLARED Explorer; elevated/package/redirection đều false |
+| Hai lần đóng/mở, theme, Ctrl+K/F5/resize/chữ Việt | WAITING_FOR_USER: tại lúc đọc evidence chỉ có một session-open, chưa có session-first-close/session-closed/acceptance-summary; cửa sổ đầu PID 30168 còn chạy và Responding=true |
+| Hiệu năng | First frame **757ms** và working **187.8MiB** đạt budgets; **idle CPU 2.2257% > 1%: FAIL** ở sample settle 5s + đo 10s, DPI 100%. Đây là lần vượt ngưỡng mới; giữ cả evidence host FAIL/recheck PASS trước đó. Nguyên nhân chưa xác định |
+| Production Windows mutation/UAC | NOT_RUN: chưa có resource ownership/results. Redirection=false chỉ cho thấy context phù hợp, không phải mutation PASS |
+
+Đã rà luồng đo và polling trong source; chưa xác định được nguyên nhân CPU từ evidence hiện có, không sửa source hoặc thay ngưỡng/điều kiện đo để gọi PASS. Launcher hiện kiểm native read/persistence rồi tiếp tục UI, chưa đưa performance gate vào `acceptance-summary.json`; vì vậy native PASS hoặc human OK không đồng nghĩa performance PASS. Không chạy thêm artifact để tìm phép đo đạt. Tất cả file evidence giữ nguyên, không đóng cửa sổ hoặc thao tác thay người dùng, không tạo resource Windows.
+
+Bước tiếp theo: tiếp tục cửa sổ đầu đang mở, đổi theme và thử checklist UI; đóng cửa sổ đầu, kiểm theme khi launcher mở lại, đóng cửa sổ thứ hai rồi ghi OK hoặc lỗi trong console. Enter ở menu tùy chọn kết thúc chỉ đọc. Không cần chạy lại launcher chỉ để bổ sung hai session còn thiếu.
 
 ## Lỗi Explorer đã tái hiện và sửa
 

@@ -1,6 +1,12 @@
 # Nghiệm thu hiện tại 1.0.2 — sửa lỗi PS5.1 BOM
 
-**PARTIAL / WAITING_FOR_USER_RETEST**. User khai báo mở Explorer1.0.1, evidence `.evidence/acceptance-9d81694925794325b328483b70e25b0a`: parent elevated=true/main=false, FAIL JsonException trước read-context/persistence. Root manifest có UTF-8 BOM EF-BB-BF do PS5.1; smoke PS7 trước đó không tạo BOM nên bỏ sót. Giữ nguyên evidence lỗi, chưa xác nhận package/AppData context hoặc native smoke của lượt Explorer.
+**PARTIAL / WAITING_FOR_USER_UI**. Lượt mới `.evidence/acceptance-858cceaea5ce4551936a796aaa272bc7` do user cung cấp đã ghi USER_DECLARED Explorer 1.0.2; source/hash/root khớp artifact. Native read và isolated persistence/backup/restore PASS; main/session đều elevated=false/package=false/**redirectedAppData=false**. Native Services 321/Ports 222 Ready, các nguồn Partial/Empty được giữ đúng scope. Đây là bằng chứng ngoài host mới; không tự suy Explorer hoặc mutation PASS từ child context.
+
+Tại lúc đọc evidence chỉ có session-open đầu, chưa có first-close/second-close/acceptance-summary. Cửa sổ đầu PID 30168 vẫn Responding=true; người dùng tiếp tục checklist, đóng/mở lại theme và ghi OK/lỗi. Không đóng thay hoặc tự chạy lại launcher. Resource Windows ownership/results chưa có: production/UAC NOT_RUN.
+
+Hiệu năng lượt Explorer: first frame 757ms/working 187.8MiB/DPI 100% đạt budgets, **idle CPU 2.2257% > 1%: FAIL**. Giữ điều kiện settle 5s + sample 10s và toàn bộ evidence; nguyên nhân chưa xác định, không chạy thêm để tìm PASS. Launcher chưa đưa performance gate vào acceptance-summary, nên native read PASS không đóng gap CPU. Lượt này chỉ đọc evidence/rà source và cập nhật docs; không đổi executable, không tạo/dọn resource Windows.
+
+Lượt lỗi cũ: user khai báo mở Explorer 1.0.1, evidence `.evidence/acceptance-9d81694925794325b328483b70e25b0a`: parent elevated=true/main=false, FAIL JsonException trước read-context/persistence. Root manifest có UTF-8 BOM EF-BB-BF do PS5.1; smoke PS7 trước đó không tạo BOM nên bỏ sót. Giữ nguyên evidence lỗi, không gán context/PASS của lượt 1.0.2 cho lần lỗi này.
 
 Source fix/package **e2c964d700856968fe86ff23daabaece5eea00c0**, artifact1.0.2. JSON reader nhận đúng một BOM, giữ native bounds/path guards, không sửa raw DPAPI reader. Stage/error rõ hơn; imported FAIL trong harness giờ làm exit thất bại, sentinel probe exit1. Launcher release.json trỏ1.0.2; giữ1.0.0/1.0.1, không reset dữ liệu hoặc policy.
 
