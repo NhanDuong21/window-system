@@ -8,7 +8,7 @@ Mỗi phase: NOT_STARTED → IN_PROGRESS → IMPLEMENTED → VERIFIED hoặc BLO
 | 02 | CPU interval, RAM, ổ, uptime, build, lỗi | 01 | VERIFIED |
 | 03 | Registry 32/64 user/machine, Appx, filter | 01 | VERIFIED |
 | 04 | Registry Run user và folder user enable/disable; nguồn khác read-only | 01,14 | VERIFIED |
-| 05 | CPU/RAM/PID, identity creation-time, terminate fixture | 01 | NOT_STARTED |
+| 05 | CPU/RAM/PID, identity creation-time, terminate fixture | 01 | VERIFIED |
 | 06 | Scan async, progress/cancel, reparse/cloud/hardlinks, partial | 01 | NOT_STARTED |
 | 07 | Services inventory; policy third-party, dependencies, narrow UAC | 01,14 | NOT_STARTED |
 | 08 | Allowlisted tool versions, resolve path, daemon state | 01 | NOT_STARTED |
