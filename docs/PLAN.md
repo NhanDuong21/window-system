@@ -11,7 +11,7 @@ Mỗi phase: NOT_STARTED → IN_PROGRESS → IMPLEMENTED → VERIFIED hoặc BLO
 | 05 | CPU/RAM/PID, identity creation-time, terminate fixture | 01 | VERIFIED |
 | 06 | Scan async, progress/cancel, reparse/cloud/hardlinks, partial | 01 | VERIFIED |
 | 07 | Services inventory; policy third-party, dependencies, narrow UAC | 01,14 | IMPLEMENTED |
-| 08 | Allowlisted tool versions, resolve path, daemon state | 01 | NOT_STARTED |
+| 08 | Allowlisted tool versions, resolve path, daemon state | 01 | VERIFIED |
 | 09 | TCP/UDP v4/v6 owner, link process, terminate fixture | 05 | NOT_STARTED |
 | 10 | Scope, secrets, PATH order, conflict, DPAPI undo, narrow UAC | 01,14 | NOT_STARTED |
 | 11 | Adapter/IP/DNS local only | 01 | NOT_STARTED |
