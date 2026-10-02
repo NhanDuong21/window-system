@@ -6,7 +6,7 @@ Mỗi phase: NOT_STARTED → IN_PROGRESS → IMPLEMENTED → VERIFIED hoặc BLO
 |---|---|---|---|
 | 01 | Windows native, skeleton, storage, dữ liệu thật, build | — | IN_PROGRESS |
 | 02 | CPU interval, RAM, ổ, uptime, build, lỗi | 01 | VERIFIED |
-| 03 | Registry 32/64 user/machine, Appx, filter | 01 | NOT_STARTED |
+| 03 | Registry 32/64 user/machine, Appx, filter | 01 | VERIFIED |
 | 04 | Registry Run user và folder user enable/disable; nguồn khác read-only | 01,14 | NOT_STARTED |
 | 05 | CPU/RAM/PID, identity creation-time, terminate fixture | 01 | NOT_STARTED |
 | 06 | Scan async, progress/cancel, reparse/cloud/hardlinks, partial | 01 | NOT_STARTED |
