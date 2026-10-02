@@ -1,4 +1,75 @@
-# Nghiệm thu Nyan Control Center 1.0.0
+# Nghiệm thu hiện tại — Nyan Control Center 1.0.1
+
+**PARTIAL**. Phần tự động an toàn hoàn tất; Explorer, persistence ngoài host và production mutation/UAC còn **WAITING_FOR_USER / NOT_RUN**. Không khởi động lại 18 phase. Các phần 1.0.0 phía dưới giữ làm baseline lịch sử, không phải số đo/source của 1.0.1.
+
+## Bạn mở gì
+
+Trong **File Explorer**, nhấp đúp **Nghiem-Thu-Nyan.cmd** ở gốc repository; gõ EXPLORER nếu chính bạn mở từ đó. Mặc định launcher kiểm manifest/checksum toàn bộ file, mở release thật, đọc native, kiểm persistence/backup/restore ở store GUID riêng, rồi mở UI hai lần. Đổi theme, Ctrl+K, F5 giữ selection, resize và xem chữ Việt/đường dẫn dài; đóng hai cửa sổ, ghi OK hoặc lỗi. **Enter ở menu cuối để kết thúc chỉ đọc.** `Mo-Nyan.cmd` mở app bình thường với dữ liệu hiện có.
+
+Menu 1–6 tùy chọn: User Environment, User Run Startup, owned process/localhost TCP, owned Temp recycle, System Environment, registered service. Mỗi bài hiện đối tượng `NYAN_ACCEPTANCE_<GUID>`, tác động và chuỗi dọn, mặc định No; chưa xác nhận thì không tạo resource Windows. Không PATH/JAVA_HOME, startup đang dùng, service đang dùng hay temp có sẵn. Script service Register/Remove cần bạn tự mở PowerShell elevated và gõ đúng tên service để xác nhận riêng; không auto-approve UAC. Xem OPERATIONS.md. Không chạy các bước đó trong host để thay thế Explorer.
+
+Launcher không cần SDK, không đổi execution policy, task/service để vượt host, không tự migrate/reset dữ liệu giữa AppData roots. Ngữ cảnh package/redirection chỉ là điều kiện guard; `False` không phải production mutation PASS. EXPLORER được ghi **USER_DECLARED**, kết quả người quan sát lưu riêng; process context không tự chứng minh nguồn mở.
+
+## Capability matrix
+
+`F0` là fixture/evidence bản1.0.0 giữ nguyên; `N1` là read-only artifact1.0.1 lần này; `S1` là 13 service orchestration regressions mô phỏng; `A1` là store riêng/DPAPI cùng profile. Cột production chỉ tính backend fixture=null trên resource Windows sở hữu trong đúng context. Không đổi phase VERIFIED để lấp cột này.
+
+| Khả năng | Fixture / app data | Native read-only 1.0.1 | Production Windows mutation | Phần cần bạn / không hỗ trợ |
+|---|---|---|---|---|
+| Portable release, main non-elevated | UI46 | N1 PASS, elevation=false | Không áp dụng | Explorer WAITING_FOR_USER; ảnh/capture không phải thao tác desktop đầy đủ |
+| Ngữ cảnh package/AppData | Guard F0 | package=false, redirectedAppData=true | NOT_RUN, guard giữ nguyên | Mở launcher từ Explorer; không tự gộp roots |
+| Theme/persistence | A1 PASS; UI controls lưu light/dark | Store GUID reload/backup/restore PASS trong host | Không áp dụng | Live user root và hai lần UI ngoài host WAITING_FOR_USER |
+| Dashboard / Applications / DevTools | UI/filter F0 +46 | N1 Partial đúng nguồn bị thiếu quyền | Không áp dụng | Không uninstall hoặc khởi daemon; hardware CIM vẫn Partial |
+| Startup inventory | F0 | N1 Partial, có dữ liệu thật | Không áp dụng | Không suy registration thành StartupApproved |
+| Startup Run User disable/enable | F0 exact bytes/type | N1 đọc | NOT_RUN | Menu2; target owned thoát ngay; cleanup value đúng identity |
+| Startup Folder User disable/enable | F0 file/undo | N1 đọc | NOT_RUN | Bài Run không chứng minh Folder production; vẫn chờ user |
+| Startup RunOnce/tasks/services/System/approval | Không mutation fixture | N1 đọc nguồn khả dụng | UNSUPPORTED | Các nguồn này chỉ đọc |
+| Process CPU/RAM/PID time | F0 UI | N1 Partial đúng permissions/vanished | Không áp dụng | Không command line inventory/log |
+| End owned process / port owner | F0 native fixture, guard override | N1 Ports Ready, PID/time có đối chiếu | NOT_RUN | Menu3, image GUID + localhost TCP + manifest, recheck PID/time/endpoint |
+| TCP/UDP v4/v6 inventory | F0 4 socket/native checks cũ | N1 Ports Ready | Không áp dụng | Menu3 TCP không chứng minh production terminate cho mọi transport |
+| Services inventory | F0 protected/dependency policy | N1 Ready321 rows | Không áp dụng | Không chọn service đang dùng để test |
+| Service start/stop/restart | S1 PASS: stop timeout, failed start sau stop, cancel sau send, stale, unknown reread | N1 chỉ đọc | NOT_RUN | Register riêng demand-start/LocalService/no network/dependency; menu6 và Remove riêng |
+| UAC cancel / permission errors / helper outcome | S1 unconfirmed helper reread/unknown, simulated access denied | Không chạy UAC | NOT_RUN | Bạn tự huỷ UAC đầu tiên; native denial/alternate-admin chưa chứng minh |
+| User environment create/update/delete/undo | F0 raw value/type/PATH/stale/undo | N1 scopes/masked Ready | NOT_RUN | Menu1 biến mới GUID; không thử biến sẵn có |
+| System environment | F0 validation, không actual SCM/helper | N1 chỉ đọc | NOT_RUN | Menu5, UAC riêng; isolated System undo không chạy/import vào live store |
+| Process environment / PATH ordering | F0 PATH raw order/type | N1 Process đọc, giá trị che | Process write UNSUPPORTED; real PATH NOT_RUN | Bài nghiệm thu không sửa PATH |
+| Cleanup age/preview/cancel/stale/recycle | F0 native fixture; 1.0.1 receipt mới chưa production | N1 Partial/metadata | NOT_RUN | Menu4 file owned đúng Temp policy; giữ exact Recycle Bin receipt, không purge |
+| Storage scan/drilldown/cancel/Unicode/links | StoreChecks31 + UI46 | N1 chưa chọn folder là Empty | Không cấu hình Windows | Local metadata only; cloud/reparse/network content không hỗ trợ |
+| Network adapters / IP/DNS | F0 privacy/UI | N1 Ready, mask mặc định | UNSUPPORTED | Không đổi DNS/firewall/routing |
+| Snapshot create/diff/export/import | A1/F0 DPAPI same-profile PASS | Coverage không đủ vẫn Partial | Không áp dụng | Không Windows Restore Point; cross-machine/reinstall recovery không được hỗ trợ bảo đảm |
+| Backup/restore dữ liệu app | A1 PASS, chỉ store riêng | N1 persistence PASS | Không áp dụng | Không overwrite live state để test; cần cùng profile/DPAPI keys còn nguyên |
+| History / preview / cancel / Ctrl+K / refresh selection | UI46 + S1 encrypted partial history | N1 native window captures | Mutation outcome thực tế NOT_RUN | Checklist Explorer/resize/DPI/preview cancel bằng người quan sát còn chờ |
+
+## Evidence mới và lỗi đã sửa
+
+- `.evidence/verify-6d0708cdc436431e9217b33fb70f7de4`: **53 PASS /0 FAIL /0 SKIP** (13 service mô phỏng,31 store/files riêng,9 module read-only), WPF **46 PASS**. Build Release0 warnings/errors. Không chạy suite Windows mutation fixture cũ trong lượt này; số135 trước đây vẫn chỉ thuộc baseline1.0.0. Sau thay đổi cuối ở acceptance preflight đã build lại solution0 warnings/errors; actual artifact gate phía dưới dùng chính source cuối.
+- `.evidence/script-checks-d6f0d8ce042342a2aac490eb33457937`: PowerShell5.1 parser và compile SCM interop. Register/Remove **NOT_RUN**; không dùng syntax check làm production PASS.
+- `.evidence/release-99cdc2dfec6a48c688fbc30ddda5eb66`: **chính artifact1.0.1**, UI46 PASS,14 native pages + dark PASS, isolated persistence/backup/restore PASS. Services321/Ports284 Ready. Dashboard/Applications/Startup/Processes/DevTools/Cleanup Partial, Storage Empty trước chọn folder, snapshot/history0 hợp lệ. Main elevation=false/package=false/**redirection=true**. PNG Services/light và Dashboard/dark đã xem; RenderTargetBitmap/controls không chứng minh Explorer, UAC hoặc mọi tương tác OS.
+- Số đo mới1.0.1: first ContentRendered **1157ms**, idle CPU **0.013%**, working set **154.7MiB**, private **108.7MiB**, DPI **125%**. Đạt budgets2500ms/1%/350MiB; Settings settle5s+sample10s trước allocation PNG. Không tái dùng scan4000files hoặc no-SDK lookup của1.0.0 như benchmark mới.
+
+Bug Services tái hiện bằng adapter: Stop được nhận nhưng timeout, restart đã stop rồi Start lỗi, cancel sau send đều mất bước đã hoàn tất trong outcome cũ. Đã sửa `PerformAsync/WaitAsync` trả **partial**, ghi lệnh đã nhận/bước đã xác minh/bước lỗi, đọc lại native state hoặc ghi unknown; không tự khôi phục. Preview stale không gửi command. Helper đã mở nhưng timeout/mất/không decode được result cũng partial, reread khi có thể; UAC cancel trước helper vẫn cancelled. History giữ nguyên thông tin partial; lỗi ghi history không biến thông tin unknown thành “đã xác minh”. Regression ở commit **06174ba**; chưa điều khiển service thật để chứng minh các nhánh SCM/UAC.
+
+Không tái hiện mất selection sau refresh; bổ sung stable-row regression PASS, không sửa/redesign UI. Cleanup outcome thêm receipt exact native bin item để lần thử tương lai có ownership/leftovers; **chưa chạy production recycle1.0.1**.
+
+## Artifact, Git và tài nguyên
+
+Release `artifacts/NyanControlCenter-1.0.1-win-x64/`, ZIP cùng tên, self-contained/unsigned; manifest gồm version/RID/source và SHA256 **tất cả file**. Source **9c72e4ba619e105a867c6153684f91fec5960635**. Commit bàn giao sau chỉ docs; không đồng nhất HEAD docs với artifact source.
+
+EXE SHA256: `DD2B14BB5924112C068BC5E44CDC46C06A0DCA79B8BE1BA92E24851CB80081BB`.
+
+ZIP SHA256: `B24F1D873FE7F955190ED50AF4339D25152526D9043DE633E41B7797AEAB8595`.
+
+Bản1.0.0/source15ca7b4/evidence cũ giữ nguyên, hashes đã đối chiếu không đổi trước lượt này. Branch **nyan/control-center**, [PR#1](https://github.com/NhanDuong21/window-system/pull/1) giữ **draft**, không merge. Mốc service06174ba, mốc launcher/package/source9c72e4b, mốc docs nghiệm thu cuối xem `git log`.
+
+Lượt này **không tạo/đăng ký hoặc sửa Windows resource thử thật**: không service, User/System environment, startup, listener hay temp recycle. Chỉ build/runtime/read-only helper processes và file/app-store/ACL/link fixtures dưới `.evidence` riêng; UI/native capture đã đóng. Artifact/evidence/app files giữ local ignored; không public inventory hay binaries. Không reset/restore state đang dùng, không thay policy/UAC hoặc gộp AppData.
+
+Fixture cũ trong Recycle Bin thuộc baseline trước lượt này vẫn giữ nguyên. Một số bài legacy không lưu exact bin receipt/File ID nên **không có đủ căn cứ để tự động purge/cleanup chúng**. Chỉ restore thủ công item có tên GUID/path khớp evidence sở hữu; không dọn theo tên chung hoặc toàn bin. Bài cleanup mới sẽ lưu receipt riêng và liệt kê item retained; lỗi khác giữ original/quarantine với identity và hướng dẫn trong `*-result.json`.
+
+DPAPI backup/snapshot chỉ đã chứng minh cùng máy/profile hiện tại còn keys. Không bảo đảm khôi phục sau cài lại Windows, profile mới hoặc máy khác; cùng tên account không đủ. Đây là giới hạn sản phẩm, không xây recovery đa máy ở lượt này. [Microsoft DPAPI](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata).
+
+Phần còn lại cần người dùng đã có launcher/quy trình concrete. Dừng tự động ở đây với **PARTIAL**, không thử cách mở khác trong host để đổi thành PASS.
+
+## Baseline lưu nguyên — 1.0.0
 
 Có bản Windows desktop chạy được, dữ liệu thật, đủ luồng cho 18 phase. **PARTIAL về nghiệm thu thao tác Windows thực tế**: 17 phase VERIFIED trong phạm vi ghi dưới đây; Phase07 IMPLEMENTED vì SCM mutation/UAC thật chưa chạy. Không công bố 18/18 đầy đủ hoặc mọi nhánh quyền cao đã PASS.
 

@@ -1,5 +1,7 @@
 # Review
 
+Lượt nghiệm thu1.0.1: Lead tự tái hiện service outcome bằng adapter mô phỏng, không gọi đây là review độc lập. Stop accepted timeout, restart stop thành công/start lỗi, cancel sau send và helper unconfirmed trước đây mất chi tiết/unknown. Sửa partial với native reread/completed steps; stale không gửi command, không repair. 13 regression PASS trong safe suite53; UI46 giữ selected stable row khi refresh. Actual artifact native read/private persistence PASS, production SCM/UAC/resource workflows **NOT_RUN**. Chi tiết mới và capability matrix ở HANDOVER; các kết quả independent review dưới đây thuộc baseline trước.
+
 Worker storage review độc lập phần Lead native/policy và chạy fixture riêng để tái hiện findings. Reader/UI tự kiểm phần họ, không gọi self-review độc lập.
 
 Đã phát hiện/sửa: Dispose hai lần; partial snapshot false diff; Startup registration khác approval; contents bound4MiB; env undo validate; port PID identity/recheck; child hooks/Docker remote config; cancel before semaphore; history save che native outcome; helper expired confirm/cancel lease; imported backup type/casing.

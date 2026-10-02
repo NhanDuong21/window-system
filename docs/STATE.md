@@ -1,3 +1,19 @@
+# Nghiệm thu bổ sung 1.0.1 — 2026-10-03
+
+**PARTIAL / WAITING_FOR_USER**: tự động an toàn xong; Explorer, live user persistence ngoài host và production Windows mutation/UAC chưa chạy. Không bắt đầu lại 18 phase; bảng phase lịch sử phía dưới giữ scope1.0.0. Capability matrix hiện hành ở HANDOVER.md.
+
+Source artifact **9c72e4ba619e105a867c6153684f91fec5960635**, release `NyanControlCenter-1.0.1-win-x64`; bản1.0.0 và evidence cũ giữ nguyên. EXE `DD2B14BB5924112C068BC5E44CDC46C06A0DCA79B8BE1BA92E24851CB80081BB`; ZIP `B24F1D873FE7F955190ED50AF4339D25152526D9043DE633E41B7797AEAB8595`. Manifest full-file hashes. Commit sau artifact chỉ docs.
+
+Mốc sửa service **06174ba**: accepted commands/completed steps/failed step/native reread/unknown; post-send cancel hoặc timeout partial, stale gửi0 commands, helper unconfirmed partial; không tự repair. Regression13 service mô phỏng, history DPAPI. **53 PASS/0 FAIL/0 SKIP** safe verify, WPF46PASS; build0 warnings/errors. Evidence `.evidence/verify-6d0708cdc436431e9217b33fb70f7de4`; source acceptance preflight cuối đã build lại và actual artifact smoke.
+
+Mốc launcher/source **9c72e4b**: `Nghiem-Thu-Nyan.cmd` human opens Explorer, all-file checksums, native read/private persistence, hai UI sessions + human checklist. GUID ownership/confirmation/resource workflows prepared; service Register/Remove riêng demand-start/LocalService; chưa chạy production. No policy bypass/auto-UAC/outside-host launch by agent. DPAPI recovery sau reinstall/cross-machine không được bảo đảm.
+
+Artifact `.evidence/release-99cdc2dfec6a48c688fbc30ddda5eb66`: UI46 +14native/dark + private persistence/backup/restore PASS. Main elevated=false/package=false/**redirectedAppData=true**; guard giữ nguyên, Explorer WAITING_FOR_USER, realMutations NOT_RUN. Services321/Ports284 Ready; một số nguồn Partial trung thực. New metrics1157ms/idleCPU0.013%/working154.7MiB/private108.7MiB/DPI125%, đạt budgets. Không lấy benchmark1.0.0 làm số đo mới.
+
+Không Windows resource mutation thử mới trong lượt này. Chỉ app/file fixtures/evidence ignored và read-only/build processes đã kết thúc; bản cũ/legacy Recycle Bin fixtures giữ nguyên, thiếu receipt nên không purge. PR#1 branch nyan/control-center giữ draft, không merge; docs HANDOVER/OPERATIONS ghi checklist và exact ownership/leftovers cho user cases. Tự động dừng; bước tiếp theo do bạn nhấp đúp launcher từ File Explorer.
+
+## State lịch sử 1.0.0
+
 # Checkpoint
 
 Branch nyan/control-center từ origin/main; repo PUBLIC. Windows native x64 build 22631. Không có code hoặc thay đổi người dùng. SDK global chỉ 6.0.428 (hết hỗ trợ): bootstrap SDK 10.0.401 official vào .tools/dotnet; không cài global. Stack .NET 10/WPF, không dependency bên thứ ba.
