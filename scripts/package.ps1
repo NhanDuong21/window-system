@@ -3,7 +3,7 @@ if(git status --porcelain --untracked-files=normal) { throw 'Commit source đã 
 $sourceCommit=git rev-parse HEAD
 $output=Join-Path $script:RepoRoot 'artifacts/NyanControlCenter-1.0.0-win-x64'
 Invoke-Dotnet restore src/Nyan.App/Nyan.App.csproj -r win-x64 --locked-mode
-Invoke-Dotnet publish src/Nyan.App/Nyan.App.csproj -c Release -r win-x64 --self-contained true --no-restore -p:SourceRevisionId=$sourceCommit -o $output
+Invoke-Dotnet publish src/Nyan.App/Nyan.App.csproj -c Release -r win-x64 --self-contained true --no-restore "-p:SourceRevisionId=$sourceCommit" -o $output
 $binary=Join-Path $output 'NyanControlCenter.exe'
 $sha=(Get-FileHash -LiteralPath $binary -Algorithm SHA256).Hash
 $manifest=[ordered]@{product='Nyan Control Center';version='1.0.0';sourceCommit=$sourceCommit;rid='win-x64';selfContained=$true;signed=$false;sha256=$sha;builtAt=(Get-Date).ToUniversalTime().ToString('o');entry='NyanControlCenter.exe'}

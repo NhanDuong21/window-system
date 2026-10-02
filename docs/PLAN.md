@@ -21,4 +21,4 @@ Mỗi phase: NOT_STARTED → IN_PROGRESS → IMPLEMENTED → VERIFIED hoặc BLO
 | 15 | Ctrl+K cached search/navigation, danger preview only | 02–14 | VERIFIED |
 | 16 | Independent diff security review/regressions | 01–15 | VERIFIED |
 | 17 | Release metrics, large fixture/filter/cancel, disposal | 01–16 | VERIFIED |
-| 18 | Self-contained artifact, hash/source, manual update/backup | 01–17 | NOT_STARTED |
+| 18 | Self-contained artifact, hash/source, manual update/backup | 01–17 | IN_PROGRESS |
