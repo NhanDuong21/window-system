@@ -13,6 +13,7 @@ public static class Program
     public static async Task<int> Main(string[] args)
     {
         if(args.FirstOrDefault()=="--owned-child") { await Task.Delay(TimeSpan.FromMinutes(5));return 0; }
+        if(args.FirstOrDefault()=="--failure-aggregation-check"){Add("FAIL expected imported-failure sentinel");return failed>0?1:0;}
         if(args.FirstOrDefault()=="--acceptance-safe")return await SafeAsync(Path.GetFullPath(args[1]));
         string evidence=Path.GetFullPath(args.Length>0?args[0]:".evidence/verify");Directory.CreateDirectory(evidence);File.WriteAllText(Path.Combine(evidence,".nyan-owned"),"Nyan test resources only");File.WriteAllText(Path.Combine(evidence,".nyan-fixture"),"Nyan test resources only");
         var owned=Path.Combine(evidence,"mutation-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(owned);File.WriteAllText(Path.Combine(owned,".nyan-owned"),"Nyan tests own this tree");
@@ -79,6 +80,7 @@ public static class Program
         Directory.CreateDirectory(evidence);File.WriteAllText(Path.Combine(evidence,".nyan-fixture"),"Owned application data checks only");
         try
         {
+            foreach(var result in await JsonFileChecks.RunAsync(evidence))Add(result);
             foreach(var result in await ServiceChecks.RunAsync(evidence))Add(result);
             foreach(var result in await StoreChecks.RunAsync(evidence))Add(result);
             using var reader=new WindowsReader();
@@ -187,7 +189,7 @@ public static class Program
     static async Task Expect(string name,Func<Task> action){try{await action();Fail(name+" (unexpected acceptance)");}catch(Exception e)when(e is AppException or ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or UnauthorizedAccessException){Add("PASS "+name);}}
     static void Check(string name,bool condition){if(condition)Add("PASS "+name);else Fail(name);}
     static void Fail(string name){failed++;Results.Add("FAIL "+name);Console.WriteLine("FAIL "+name);}
-    static void Add(string result){Results.Add(result);if(result.StartsWith("PASS"))passed++;else if(result.StartsWith("SKIP"))skipped++;}
+    static void Add(string result){Results.Add(result);if(result.StartsWith("PASS"))passed++;else if(result.StartsWith("SKIP"))skipped++;else if(result.StartsWith("FAIL")){failed++;Console.WriteLine(result);}}
     sealed class DeterministicReader:IWindowsReader
     {
         public Task<ModuleResult> ReadAsync(Module module,bool reveal,CancellationToken token){token.ThrowIfCancellationRequested();var cells=module==Module.Environment?new Dictionary<string,string>{{"name","X"},{"scope","User"},{"value","Đã che"}}:new(){{"name","Fixture"},{"source","Owned fixture"}};return Task.FromResult(new ModuleResult(module,new(){new("name","Tên")},new(){new("fixture",cells)},ResultState.Ready,"Fixture",DateTimeOffset.Now));}

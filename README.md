@@ -1,6 +1,6 @@
 # Nyan Control Center
 
-Desktop WPF tiếng Việt quản lý Windows local. Mở **Mo-Nyan.cmd** hoặc `artifacts/NyanControlCenter-1.0.1-win-x64/NyanControlCenter.exe` sau khi package. Nghiệm thu bằng **Nghiem-Thu-Nyan.cmd từ File Explorer**; mặc định chỉ đọc Windows và dữ liệu app riêng. Bản self-contained gồm runtime trong cả thư mục; không chỉ sao chép riêng EXE. Giữ bản1.0.0 để rollback.
+Desktop WPF tiếng Việt quản lý Windows local. Mở **Mo-Nyan.cmd** hoặc `artifacts/NyanControlCenter-1.0.2-win-x64/NyanControlCenter.exe` sau khi package. Nghiệm thu bằng **Nghiem-Thu-Nyan.cmd từ File Explorer**; mặc định chỉ đọc Windows và dữ liệu app riêng. Bản self-contained gồm runtime trong cả thư mục; không chỉ sao chép riêng EXE. Giữ bản1.0.0/1.0.1 để đối chiếu.
 
 Đọc [docs/HANDOVER.md](docs/HANDOVER.md) để nghiệm thu 18 phase và giới hạn. Không telemetry/cloud/backend HTTP. App chính chạy user thường.
 

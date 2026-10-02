@@ -4,6 +4,9 @@ $evidence=Join-Path $script:RepoRoot ('.evidence/verify-'+[guid]::NewGuid().ToSt
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 Invoke-Dotnet restore NyanControlCenter.sln --locked-mode
 Invoke-Dotnet build NyanControlCenter.sln -c Release --no-restore
+$probe=Start-Process -FilePath $script:Dotnet -ArgumentList @('tests/Nyan.Tests/bin/Release/net10.0-windows/Nyan.Tests.dll','--failure-aggregation-check') -WorkingDirectory $script:RepoRoot -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $evidence 'expected-failure-probe.txt') -RedirectStandardError (Join-Path $evidence 'expected-failure-probe-error.txt')
+if($probe.ExitCode -ne 1) { throw 'Test reporter không chặn imported FAIL; không được tiếp tục nghiệm thu.' }
+$probe.Dispose()
 & $script:Dotnet 'tests/Nyan.Tests/bin/Release/net10.0-windows/Nyan.Tests.dll' --acceptance-safe $evidence
 $testExit=$LASTEXITCODE
 if(-not $SkipUI) {

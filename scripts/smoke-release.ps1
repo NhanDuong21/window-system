@@ -11,7 +11,9 @@ foreach($mode in @('ui-checks','capture-native')) {
     Set-Content -LiteralPath (Join-Path $owned '.nyan-owned') -Value 'Owned verification output; native mode is read-only'
     if($mode -eq 'capture-native') {
         $artifact=Get-Content -LiteralPath (Join-Path (Split-Path -Parent $AppPath) 'build-manifest.json') -Raw | ConvertFrom-Json
-        @{product='Nyan acceptance';id=[guid]::NewGuid().ToString('N');root=$owned;sourceCommit=[string]$artifact.sourceCommit;exeSha256=[string]$artifact.sha256} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $owned 'ownership.json') -Encoding utf8
+        $ownership=@{product='Nyan acceptance';id=[guid]::NewGuid().ToString('N');root=$owned;sourceCommit=[string]$artifact.sourceCommit;exeSha256=[string]$artifact.sha256} | ConvertTo-Json
+        # Exercise the actual Windows PowerShell 5.1 launcher's UTF-8 BOM format even under PS7.
+        [IO.File]::WriteAllText((Join-Path $owned 'ownership.json'),$ownership,(New-Object Text.UTF8Encoding($true)))
     }
     $launch=Start-Process -FilePath $AppPath -ArgumentList @('--'+$mode,('"'+$owned+'"')) -WorkingDirectory (Split-Path -Parent $AppPath) -WindowStyle Hidden -PassThru
     $watch=[Diagnostics.Stopwatch]::StartNew()

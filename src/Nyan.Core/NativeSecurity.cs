@@ -113,6 +113,14 @@ public static class NativeSecurity
         using var lease=new FileLease(path,readContents:true);if(lease.Length>maximum)throw new AppException("size","File vượt giới hạn an toàn.");var bytes=new byte[(int)lease.Length];int offset=0;
         while(offset<bytes.Length){int read=RandomAccess.Read(lease.Handle,bytes.AsSpan(offset),offset);if(read==0)throw new AppException("read","File không đầy đủ; thao tác bị chặn.");offset+=read;}return bytes;
     }
+    public static T ReadJson<T>(string path,int maximum)
+    {
+        // Windows PowerShell 5.1 writes UTF-8 BOM with -Encoding utf8.
+        // Strip only that JSON encoding marker; bounded/native file guards remain unchanged.
+        var bytes=ReadBounded(path,maximum);
+        int start=bytes.Length>=3&&bytes[0]==0xef&&bytes[1]==0xbb&&bytes[2]==0xbf?3:0;
+        return System.Text.Json.JsonSerializer.Deserialize<T>(bytes.AsSpan(start))??throw new AppException("json","File JSON không có đối tượng hợp lệ.");
+    }
 }
 
 public sealed class FileLease : IDisposable

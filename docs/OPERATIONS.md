@@ -1,6 +1,6 @@
 # Vận hành
 
-Mở `Mo-Nyan.cmd` hoặc `artifacts/NyanControlCenter-1.0.1-win-x64/NyanControlCenter.exe`. Copy cả folder release tới thư mục riêng nếu muốn. Bản 1.0.0 vẫn giữ riêng để đối chiếu/rollback. Không installer/startup/service được cài khi mở bình thường. .NET/WindowsDesktop nằm cùng app; Windows PowerShell5.1 và native IP Helper/SCM dùng thành phần sẵn trên máy. Thiếu nguồn hiện lỗi/partial, không mock.
+Mở `Mo-Nyan.cmd` hoặc `artifacts/NyanControlCenter-1.0.2-win-x64/NyanControlCenter.exe`. Copy cả folder release tới thư mục riêng nếu muốn. Bản1.0.0/1.0.1 vẫn giữ riêng để đối chiếu. Bản1.0.2 sửa đọc manifest UTF-8 BOM do Windows PowerShell5.1 tạo; không cần sửa/xóa evidence lỗi cũ. Không installer/startup/service được cài khi mở bình thường. .NET/WindowsDesktop nằm cùng app; Windows PowerShell5.1 và native IP Helper/SCM dùng thành phần sẵn trên máy. Thiếu nguồn hiện lỗi/partial, không mock.
 
 Nghiệm thu: tự nhấp đúp `Nghiem-Thu-Nyan.cmd` trong File Explorer, gõ EXPLORER nếu đúng nguồn mở. Launcher kiểm checksum tất cả file, đọc native, kiểm dữ liệu app ở thư mục GUID riêng, mở/đóng/mở lại UI thật; bạn đổi theme, Ctrl+K, F5, resize rồi ghi nhận OK hoặc lỗi. Enter tại menu cuối để kết thúc chỉ đọc. Evidence local ignored `.evidence/acceptance-<GUID>` gồm artifact/source/context/thời điểm, không overwrite state đang dùng. Explorer là USER_DECLARED kèm quan sát của bạn; không suy ra từ child process. Nếu policy chặn script, giữ lỗi và báo lại; không dùng ExecutionPolicy Bypass.
 

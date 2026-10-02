@@ -17,12 +17,12 @@ internal static class Acceptance
     internal static string Validate(string root)
     {
         root=Path.GetFullPath(root);NativeSecurity.CheckLocalPath(root);
-        var manifest=JsonSerializer.Deserialize<Dictionary<string,string>>(NativeSecurity.ReadBounded(Path.Combine(root,"ownership.json"),64*1024))!;
+        var manifest=NativeSecurity.ReadJson<Dictionary<string,string>>(Path.Combine(root,"ownership.json"),64*1024);
         if(manifest.GetValueOrDefault("product")!="Nyan acceptance"||!Guid.TryParseExact(manifest.GetValueOrDefault("id"),"N",out _)||manifest.GetValueOrDefault("root")!=root)
             throw new AppException("ownership","Thư mục nghiệm thu không có ownership manifest hợp lệ.");
         return root;
     }
-    static string Id(string root)=>JsonSerializer.Deserialize<Dictionary<string,string>>(File.ReadAllText(Path.Combine(root,"ownership.json")))!["id"];
+    static string Id(string root)=>NativeSecurity.ReadJson<Dictionary<string,string>>(Path.Combine(root,"ownership.json"),64*1024)["id"];
     internal static void Context(string root,string mode)
     {
         var leaf=mode+"-context.json";if(File.Exists(Path.Combine(root,leaf)))leaf=mode+"-context-"+Guid.NewGuid().ToString("N")+".json";
@@ -53,7 +53,7 @@ internal static class Acceptance
         {
             if(request.Kind is ActionKind.StartService or ActionKind.StopService or ActionKind.RestartService)
             {
-                var ownership=JsonSerializer.Deserialize<Dictionary<string,JsonElement>>(NativeSecurity.ReadBounded(Path.Combine(root,"service-ownership.json"),64*1024))!;
+                var ownership=NativeSecurity.ReadJson<Dictionary<string,JsonElement>>(Path.Combine(root,"service-ownership.json"),64*1024);
                 var native=ServicesNative.Read(name);var folder=ownership["folder"].GetString()!;
                 if(native.Binary!=ownership["binary"].GetString()||native.Type!=0x10||native.StartType!=3||native.Dependents.Length!=0||Hash(Path.Combine(folder,"NyanControlCenter.exe"))!=ownership["exeSha256"].GetString())throw new AppException("identity","Service đã đổi ownership; không gửi lệnh.");
             }
@@ -168,7 +168,7 @@ internal static class Acceptance
             }
             else if(kind=="service")
             {
-                var manifest=JsonSerializer.Deserialize<Dictionary<string,JsonElement>>(NativeSecurity.ReadBounded(Path.Combine(root,"service-ownership.json"),64*1024))!;
+                var manifest=NativeSecurity.ReadJson<Dictionary<string,JsonElement>>(Path.Combine(root,"service-ownership.json"),64*1024);
                 var service=ServicesNative.Read(name);var expected=manifest["binary"].GetString()!;
                 var serviceExe=Path.Combine(manifest["folder"].GetString()!,"NyanControlCenter.exe");
                 if(manifest["name"].GetString()!=name||Hash(serviceExe)!=manifest["exeSha256"].GetString()||service.Binary!=expected||service.Type!=0x10||service.StartType!=3||service.Dependents.Length!=0)throw new AppException("identity","Service không khớp ownership/demand-start/no dependency.");

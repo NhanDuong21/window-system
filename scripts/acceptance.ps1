@@ -35,7 +35,8 @@ function Invoke-Acceptance([string]$mode,[string]$resultLeaf) {
     $launch.Dispose()
 }
 Invoke-Acceptance '--capture-native' 'result.txt'
-if((Get-Content -LiteralPath (Join-Path $root 'result.txt') -First 1) -ne 'PASS') { throw 'Native read smoke failed; inspect result.txt.' }
+$readResult=Get-Content -LiteralPath (Join-Path $root 'result.txt')
+if($readResult[0] -ne 'PASS') { throw ("Read acceptance failed:`n"+($readResult -join [Environment]::NewLine)+"`nEvidence: "+$root) }
 $context=Get-Content -LiteralPath (Join-Path $root 'read-context.json') -Raw | ConvertFrom-Json
 $persistence=Get-Content -LiteralPath (Join-Path $root 'persistence.json') -Raw | ConvertFrom-Json
 if($context.elevated -or $persistence.result -ne 'PASS') { throw 'Ordinary user / private persistence failed.' }
