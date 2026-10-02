@@ -14,7 +14,7 @@ Mỗi phase: NOT_STARTED → IN_PROGRESS → IMPLEMENTED → VERIFIED hoặc BLO
 | 08 | Allowlisted tool versions, resolve path, daemon state | 01 | VERIFIED |
 | 09 | TCP/UDP v4/v6 owner, link process, terminate fixture | 05 | VERIFIED |
 | 10 | Scope, secrets, PATH order, conflict, DPAPI undo, narrow UAC | 01,14 | VERIFIED |
-| 11 | Adapter/IP/DNS local only | 01 | NOT_STARTED |
+| 11 | Adapter/IP/DNS local only | 01 | VERIFIED |
 | 12 | Snapshot create/diff/validated import/export DPAPI | 03,04,08 | NOT_STARTED |
 | 13 | Temp scan/select/preview; identity recheck; Recycle Bin | 06,14 | NOT_STARTED |
 | 14 | Outcome history, bounds/retention/redaction | 01 | NOT_STARTED |
