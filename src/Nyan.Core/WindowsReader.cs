@@ -35,7 +35,7 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
                     Module.Applications => await ApplicationsAsync(reveal, linked.Token).ConfigureAwait(false),
                     Module.Startup => await StartupAsync(reveal, linked.Token).ConfigureAwait(false),
                     Module.Processes => await ProcessesAsync(linked.Token).ConfigureAwait(false),
-                    Module.Services => await ServicesAsync(reveal, linked.Token).ConfigureAwait(false),
+                    Module.Services => ReadServices(reveal, linked.Token),
                     Module.DevTools => await DevToolsAsync(reveal, linked.Token).ConfigureAwait(false),
                     Module.Ports => await PortsAsync(reveal, linked.Token).ConfigureAwait(false),
                     Module.Environment => ReadEnvironment(reveal, linked.Token),
@@ -45,7 +45,8 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
             }
             catch (OperationCanceledException) { return ModuleResult.Failure(module, "Đã hủy đọc dữ liệu.", ResultState.Cancelled); }
             catch (UnauthorizedAccessException) { return ModuleResult.Failure(module, "Không có quyền đọc nguồn dữ liệu này.", ResultState.Denied); }
-            catch (Exception e) when (e is IOException or System.ComponentModel.Win32Exception or JsonException or InvalidOperationException or System.Security.SecurityException)
+            catch (System.ComponentModel.Win32Exception e) { return ModuleResult.Failure(module, "Windows không cho phép đọc nguồn dữ liệu native này (mã " + e.NativeErrorCode + ").", e.NativeErrorCode == 5 ? ResultState.Denied : ResultState.Error); }
+            catch (Exception e) when (e is IOException or JsonException or InvalidOperationException or System.Security.SecurityException)
             { return ModuleResult.Failure(module, "Không đọc được dữ liệu Windows. Thử tải lại; chi tiết nhạy cảm không được ghi vào log."); }
         }, CancellationToken.None);
     }
@@ -230,13 +231,14 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
             }
         }
         else failures++;
-        var services = await _commands.PowerShellAsync(StartupServicesScript, token).ConfigureAwait(false);
-        if (services.Success)
+        try
         {
-            foreach (var j in JsonRows(services.Output)) rows.Add(StartupRow("service:" + Text(j, "Name"), Text(j, "DisplayName"), Text(j, "PathName"), "Service / tự động", false, reveal,
-                new() { ["kind"] = "service", ["name"] = Text(j, "Name"), ["state"] = Text(j, "State"), ["writable"] = "false", ["supported"] = "false" }, Text(j, "State")));
+            var services = WindowsNativeInventory.ReadServices(token); failures += services.FailedSources;
+            foreach (var service in services.Items.Where(s => s.StartMode == "Auto"))
+                rows.Add(StartupRow("service:" + service.Name, service.DisplayName, service.Path, "Service / tự động", false, reveal,
+                    new() { ["kind"] = "service", ["name"] = service.Name, ["state"] = service.State, ["writable"] = "false", ["supported"] = "false" }, service.State));
         }
-        else failures++;
+        catch (Exception e) when (e is System.ComponentModel.Win32Exception or InvalidDataException) { failures++; }
         return Result(Module.Startup, [new("name", "Mục tự khởi động"), new("source", "Nguồn"), new("state", "Trạng thái"), new("command", "Lệnh / đường dẫn"), new("control", "Phạm vi điều khiển")], rows, failures > 0,
             "Điều khiển hỗ trợ đăng ký Run User và file Startup Folder User. Có đăng ký không bảo đảm Windows cho phép chạy: kiểm tra Startup Apps. RunOnce, System, task và service tại đây chỉ đọc. " + FailureMessage(failures));
     }
@@ -296,60 +298,72 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
         return result;
     }
 
-    private async Task<ModuleResult> ServicesAsync(bool reveal, CancellationToken token)
+    private static ModuleResult ReadServices(bool reveal, CancellationToken token)
     {
-        var output = await _commands.PowerShellAsync(ServicesScript, token).ConfigureAwait(false);
-        if (!output.Success) return CommandFailure(Module.Services, output);
+        var inventory = WindowsNativeInventory.ReadServices(token);
         var rows = new List<Row>();
-        foreach (var j in JsonRows(output.Output))
+        var dependents = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var service in inventory.Items)
+            foreach (var dependency in service.Dependencies ?? new())
+            {
+                if (dependency.StartsWith('+')) continue; // Load-order group, not a service name.
+                if (!dependents.TryGetValue(dependency, out var list)) dependents[dependency] = list = new();
+                list.Add(service.Name);
+            }
+        foreach (var service in inventory.Items.DistinctBy(s => s.Name, StringComparer.OrdinalIgnoreCase))
         {
             token.ThrowIfCancellationRequested();
-            var name = Text(j, "Name");
+            var dependencies = service.Dependencies is null ? "Không đọc được" : service.Dependencies.Count == 0 ? "Không có" : string.Join("; ", service.Dependencies);
+            var dependentNames = dependents.GetValueOrDefault(service.Name) ?? new();
+            var dependentText = dependentNames.Count == 0 ? "Không có trong config đọc được" : string.Join("; ", dependentNames);
+            if (inventory.FailedSources > 0) dependentText += " (một phần)";
+            var name = service.Name;
             rows.Add(new Row(name, new() {
-                ["name"] = name, ["display"] = Text(j, "DisplayName"), ["state"] = TranslateState(Text(j, "State")),
-                ["startMode"] = TranslateStart(Text(j, "StartMode")), ["path"] = reveal ? Text(j, "PathName") : "Đã che lệnh / đường dẫn",
-                ["dependencies"] = Empty(Text(j, "Dependencies")), ["dependents"] = Empty(Text(j, "Dependents"))
-            }, new() { ["name"] = name, ["state"] = Text(j, "State"), ["startMode"] = Text(j, "StartMode"),
-                ["path"] = Text(j, "PathName"), ["serviceType"] = Text(j, "ServiceType"),
-                ["dependencies"] = Text(j, "Dependencies"), ["dependents"] = Text(j, "Dependents") }));
+                ["name"] = name, ["display"] = service.DisplayName, ["state"] = TranslateState(service.State),
+                ["startMode"] = service.StartMode.Length == 0 ? "Không đọc được" : TranslateStart(service.StartMode),
+                ["path"] = reveal ? service.Path.Length == 0 ? "Không đọc được" : service.Path : "Đã che lệnh / đường dẫn",
+                ["dependencies"] = dependencies, ["dependents"] = dependentText
+            }, new() { ["name"] = name, ["state"] = service.State, ["startMode"] = service.StartMode,
+                ["path"] = service.Path, ["serviceType"] = service.ServiceType,
+                ["dependencies"] = string.Join("; ", service.Dependencies ?? new()), ["dependents"] = string.Join("; ", dependentNames),
+                ["configReadable"] = (service.Dependencies is not null).ToString().ToLowerInvariant() }));
         }
-        return Result(Module.Services, [new("name", "Tên service"), new("display", "Tên hiển thị"), new("state", "Trạng thái"), new("startMode", "Kiểu khởi động"), new("dependencies", "Cần service"), new("dependents", "Service phụ thuộc"), new("path", "Lệnh thực thi")], rows, false,
-            "Inventory Windows CIM + Service Control Manager. Không suy đoán service an toàn để tắt; mutation áp dụng policy riêng và kiểm tra native.");
+        return Result(Module.Services, [new("name", "Tên service"), new("display", "Tên hiển thị"), new("state", "Trạng thái"), new("startMode", "Kiểu khởi động"), new("dependencies", "Cần service"), new("dependents", "Service phụ thuộc"), new("path", "Lệnh thực thi")], rows, inventory.FailedSources > 0,
+            "Service Control Manager native, chỉ quyền đọc. Windows có thể bỏ qua service không cho query status; danh sách phụ thuộc suy ra từ config đọc được. Mutation có policy riêng. " + FailureMessage(inventory.FailedSources));
     }
 
-    private async Task<ModuleResult> PortsAsync(bool reveal, CancellationToken token)
+    private Task<ModuleResult> PortsAsync(bool reveal, CancellationToken token)
     {
         var before = ProcessSamples(token);
-        var output = await _commands.PowerShellAsync(PortsScript, token).ConfigureAwait(false);
-        if (!output.Success) return CommandFailure(Module.Ports, output);
+        var inventory = WindowsNativeInventory.ReadEndpoints(token);
+        if (inventory.FailedSources == 4 && inventory.Items.Count == 0)
+            return Task.FromResult(ModuleResult.Failure(Module.Ports, "Không đọc được các bảng endpoint IP Helper tại máy này.", inventory.Denied ? ResultState.Denied : ResultState.Error));
         var identity = ProcessSamples(token);
         var rows = new List<Row>();
-        var failures = 0;
-        foreach (var j in JsonRows(output.Output))
+        foreach (var endpoint in inventory.Items)
         {
             token.ThrowIfCancellationRequested();
-            if (Text(j, "Protocol") == "Error") { failures++; continue; }
-            var protocol = Text(j, "Protocol");
-            var address = Text(j, "LocalAddress");
-            var remote = Text(j, "RemoteAddress");
-            var pidText = Text(j, "OwningProcess");
+            var protocol = endpoint.Protocol;
+            var address = endpoint.LocalAddress;
+            var remote = endpoint.RemoteAddress;
+            var pidText = endpoint.Pid;
             int.TryParse(pidText, out var pid);
             identity.TryGetValue(pid, out var process);
             if (process is null || process.StartTicks <= 0 || !before.TryGetValue(pid, out var previous) || previous.StartTicks != process.StartTicks)
                 process = null;
-            var id = StableId("endpoint", string.Join(":", protocol, address, Text(j, "LocalPort"), remote, Text(j, "RemotePort"), pidText, Text(j, "State")));
+            var id = StableId("endpoint", string.Join(":", protocol, address, endpoint.LocalPort, remote, endpoint.RemotePort, pidText, endpoint.State));
             rows.Add(new Row(id, new() {
                 ["protocol"] = protocol + (address.Contains(':') ? " / IPv6" : " / IPv4"),
-                ["address"] = reveal ? address : "Đã che địa chỉ", ["port"] = Text(j, "LocalPort"),
-                ["remote"] = protocol == "UDP" ? "—" : reveal ? remote + ":" + Text(j, "RemotePort") : "Đã che địa chỉ",
-                ["state"] = protocol == "UDP" ? "Endpoint UDP" : Text(j, "State"), ["pid"] = pidText,
+                ["address"] = reveal ? address : "Đã che địa chỉ", ["port"] = endpoint.LocalPort,
+                ["remote"] = protocol == "UDP" ? "—" : reveal ? remote + ":" + endpoint.RemotePort : "Đã che địa chỉ",
+                ["state"] = protocol == "UDP" ? "Endpoint UDP" : endpoint.State, ["pid"] = pidText,
                 ["name"] = process?.Name ?? "Không đọc được / đã kết thúc"
             }, new() { ["pid"] = pidText, ["startTicks"] = (process?.StartTicks ?? 0).ToString(CultureInfo.InvariantCulture),
-                ["name"] = process?.Name ?? "", ["protocol"] = protocol, ["localAddress"] = address, ["localPort"] = Text(j, "LocalPort"),
-                ["remoteAddress"] = remote, ["remotePort"] = Text(j, "RemotePort"), ["state"] = Text(j, "State") }));
+                ["name"] = process?.Name ?? "", ["protocol"] = protocol, ["localAddress"] = address, ["localPort"] = endpoint.LocalPort,
+                ["remoteAddress"] = remote, ["remotePort"] = endpoint.RemotePort, ["state"] = endpoint.State }));
         }
-        return Result(Module.Ports, [new("protocol", "Giao thức"), new("address", "Địa chỉ bind"), new("port", "Port"), new("remote", "Endpoint từ xa"), new("state", "Trạng thái"), new("pid", "PID"), new("name", "Tiến trình sở hữu")], rows, failures > 0,
-            "TCP/UDP native qua NetTCPIP, gồm IPv4/IPv6. Mục có thể thay đổi ngay sau khi đọc. Không suy đoán ứng dụng theo số port. " + FailureMessage(failures));
+        return Task.FromResult(Result(Module.Ports, [new("protocol", "Giao thức"), new("address", "Địa chỉ bind"), new("port", "Port"), new("remote", "Endpoint từ xa"), new("state", "Trạng thái"), new("pid", "PID"), new("name", "Tiến trình sở hữu")], rows, inventory.FailedSources > 0,
+            "IP Helper native: TCP/UDP IPv4/IPv6, quyền user thường. PID + thời điểm tạo phải ổn định trước/sau inventory. Không suy đoán ứng dụng theo số port. " + FailureMessage(inventory.FailedSources)));
     }
 
     private static ModuleResult ReadEnvironment(bool reveal, CancellationToken token)
@@ -626,22 +640,6 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
         $r=@(Get-ScheduledTask | Where-Object {@($_.Triggers | Where-Object {$_.CimClass.CimClassName -match 'LogonTrigger|BootTrigger'}).Count -gt 0} | ForEach-Object {
             [pscustomobject]@{TaskName=$_.TaskName;TaskPath=$_.TaskPath;State=$_.State.ToString();Command=($_.Actions | ForEach-Object {$_.Execute+' '+$_.Arguments}) -join '; '}
         });ConvertTo-Json -InputObject $r -Compress -Depth 3
-        """;
-    private const string StartupServicesScript = """
-        $r=@(Get-CimInstance Win32_Service -Filter "StartMode='Auto'" | Select-Object Name,DisplayName,State,PathName);
-        ConvertTo-Json -InputObject $r -Compress -Depth 3
-        """;
-    private const string ServicesScript = """
-        $s=@{};Get-Service | ForEach-Object {$s[$_.Name]=$_};
-        $r=@(Get-CimInstance Win32_Service | ForEach-Object {$n=$_.Name;$v=$s[$n];
-            [pscustomobject]@{Name=$n;DisplayName=$_.DisplayName;State=$_.State;StartMode=$_.StartMode;PathName=$_.PathName;ServiceType=$_.ServiceType;
-                Dependencies=($v.ServicesDependedOn | ForEach-Object {$_.Name}) -join '; ';Dependents=($v.DependentServices | ForEach-Object {$_.Name}) -join '; '}
-        });ConvertTo-Json -InputObject $r -Compress -Depth 3
-        """;
-    private const string PortsScript = """
-        $r=@();try{$r+=@(Get-NetTCPConnection | ForEach-Object {[pscustomobject]@{Protocol='TCP';LocalAddress=$_.LocalAddress;LocalPort=$_.LocalPort;RemoteAddress=$_.RemoteAddress;RemotePort=$_.RemotePort;State=$_.State.ToString();OwningProcess=$_.OwningProcess}})}catch{$r+=[pscustomobject]@{Protocol='Error'}};
-        try{$r+=@(Get-NetUDPEndpoint | ForEach-Object {[pscustomobject]@{Protocol='UDP';LocalAddress=$_.LocalAddress;LocalPort=$_.LocalPort;RemoteAddress='';RemotePort='';State='';OwningProcess=$_.OwningProcess}})}catch{$r+=[pscustomobject]@{Protocol='Error'}};
-        ConvertTo-Json -InputObject $r -Compress -Depth 3
         """;
 
     public void Dispose()
