@@ -12,4 +12,6 @@ Subprocess fixed executable/args/scripts; timeout20s/5s, stdout8MiB/stderr16KiB,
 
 UAC file request DPAPI/ACL/TTL/one-use/kind/size; decoded action confirm, active lease/expiry recheck. Không listener/LAN/debug bridge. External tools chỉ fixed ms-settings/System executable.
 
+Native directory handle pin chống đổi parent trong file action; IPC CreateNew không ghi đè leaf, reads bound qua verified handle. Windows Desktop Bridge có thể chuyển hướng AppData dù process không có package identity. Chỉ thư mục app cố định được giải về native path chuẩn; strict file-action path checks giữ nguyên. Production mutation từ host có package identity hoặc AppData redirection bị từ chối ở cả token/native-plan boundary; mở EXE từ File Explorer. Không đổi cấu hình host/package hay security policy để vượt lỗi.
+
 Repo PUBLIC: .evidence/.runtime/.tools/artifacts ignored; kiểm staged trước commit. UAC thật/service thật chưa chạy được ghi rõ; không tuyên bố an toàn tuyệt đối.

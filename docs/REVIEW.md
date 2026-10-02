@@ -5,3 +5,17 @@ Worker storage review độc lập phần Lead native/policy và chạy fixture 
 Đã phát hiện/sửa: Dispose hai lần; partial snapshot false diff; Startup registration khác approval; contents bound4MiB; env undo validate; port PID identity/recheck; child hooks/Docker remote config; cancel before semaphore; history save che native outcome; helper expired confirm/cancel lease; imported backup type/casing.
 
 Regression/evidence/final outcome cập nhật ở HANDOVER/STATE. Không scanner được dùng để gọi app an toàn tuyệt đối; giới hạn race ngoài app/UAC thật được ghi riêng.
+
+| Mức | Finding và sửa | Bằng chứng |
+|---|---|---|
+| P1 | Helper result leaf có thể bị ghi đè; CreateNew, parent lease, bounded native handle read | 7 IPC regression + review source độc lập |
+| P1 | Hết hạn sau confirm hoặc cancel-before-lock có thể thực thi lại; kiểm tra expiry tại native boundary, nonce one-use | Full verify, expiry/cancel regression |
+| P1 | History lỗi làm mất kết quả native đã xác minh; giữ outcome, mask/truncate target/message | Long registry-name và cancel history tests |
+| P1 | Recycle chưa chứng minh không xóa vĩnh viễn; modern IFileOperation pre/post callback, no fallback | `.evidence/recycle-owned/results.txt`:5PASS gồm restore file exact |
+| P2 | Rename lỗi87 và parent metadata handle không pin; FILE_RENAME_INFO terminated absolute UTF16, LIST_DIRECTORY/no SHARE_DELETE | `.evidence/rename-owned/results.txt`:6PASS |
+| P2 | Numeric enum/backup type/casing, stale undo; strict literal kind/view, canonical bool, native recheck | Fixture registry + imported backup regressions |
+| P2 | Restore còn preview/cache; serialize restore + invalidate | Controller restore-preview regression |
+| P2 | Service Disabled restart có thể stop trước khi thất bại; chặn trước native stop | Source review; SCM mutation/UAC thật chưa test |
+| P2 | Host chuyển hướng AppData khi package identity=false; canonical app-owned root và hai native mutation guards | Owned native path probe + direct/token guard regressions |
+
+Worker storage đã tái hiện findings bằng runner riêng và full suite123PASS/0FAIL/0SKIP trước IPC tightening; sau đó review diff cập nhật độc lập. Lead chạy lại toàn bộ suite mới nhất, ghi số/evidence cuối trong HANDOVER. Review này không chứng minh an toàn trước malware đã kiểm soát tài khoản hoặc admin.

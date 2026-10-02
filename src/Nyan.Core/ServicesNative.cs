@@ -58,6 +58,7 @@ public static class ServicesNative
         NativeSecurity.CheckLocalPath(path);
         if(action is ActionKind.StopService or ActionKind.RestartService)
         {
+            if(action==ActionKind.RestartService&&s.StartType==4)throw new AppException("service-state","Service Disabled không thể restart; thao tác bị chặn trước khi stop.");
             if(s.Dependents.Length>0)throw new AppException("dependency","Có service phụ thuộc đang chạy; không dừng dây chuyền.");
             if(s.State!=4||(s.Accepted&1)==0)throw new AppException("service-state","Service chưa ở trạng thái chạy ổn định hoặc không nhận lệnh stop.");
         }

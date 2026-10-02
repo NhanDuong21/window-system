@@ -40,6 +40,7 @@ public static class Program
             await ProcessTests(mutations);
             await CleanupTests(mutations,owned);
             await ReviewRegressions(mutations,store,keyPath);
+            await BoundedFileRegressions(owned);
             await Expect("P16 path traversal rejected",()=>Task.Run(()=>NativeSecurity.CheckLocalPath(@"\\example.invalid\share\file")));
             await Expect("P16 process self protected",()=>Task.Run(()=>NativeSecurity.CheckedProcess(Environment.ProcessId,Process.GetCurrentProcess().StartTime.ToUniversalTime().Ticks)));
             await Expect("P16 invalid service name",()=>Task.Run(()=>ServicesNative.ValidateName("x; Stop-Service *")));
@@ -127,10 +128,41 @@ public static class Program
         using var hive=RegistryKey.OpenBaseKey(RegistryHive.CurrentUser,RegistryView.Registry64);using var env=hive.CreateSubKey(keyPath+@"\Environment",true);env.SetValue("REVIEW","CURRENT",RegistryValueKind.String);
         var current=mutations.ReadEnvironment("User","REVIEW");var id=Guid.NewGuid().ToString("N");store.PutBackup(id,new(){{"type","environment"},{"scope","User"},{"name","REVIEW"},{"value","ORIGINAL"},{"exists","true"},{"kind","String"},{"afterFingerprint",Mutations.Fingerprint(current)}});
         var undo=await mutations.PreviewAsync(new(ActionKind.Undo,id),null,null,CancellationToken.None);var undone=await mutations.ExecuteAsync(undo.Token,CancellationToken.None);Check("P16 imported boolean casing canonicalized",undone.Status=="success"&&(string?)env.GetValue("REVIEW")=="ORIGINAL");
+        current=mutations.ReadEnvironment("User","REVIEW");id=Guid.NewGuid().ToString("N");store.PutBackup(id,new(){{"type","environment"},{"scope","User"},{"name","REVIEW"},{"value","FORGED"},{"exists","True"},{"kind","1"},{"afterFingerprint",Mutations.Fingerprint(current)}});await Expect("P16 numeric enum backup rejected before write",()=>mutations.PreviewAsync(new(ActionKind.Undo,id),null,null,CancellationToken.None));Check("P16 numeric enum retains original data",(string?)env.GetValue("REVIEW")=="ORIGINAL");
         using var run=hive.CreateSubKey(keyPath+@"\Run",true);id=Guid.NewGuid().ToString("N");store.PutBackup(id,new(){{"type","startup-run"},{"key",keyPath+@"\Run"},{"name","Forged"},{"value","7"},{"view","Registry64"},{"registryKind","DWord"}});await Expect("P16 forged Run registry kind rejected",()=>mutations.PreviewAsync(new(ActionKind.Undo,id),null,null,CancellationToken.None));Check("P16 forged backup did not write registry",run.GetValue("Forged")==null);
         current=mutations.ReadEnvironment("User","REVIEW");var fields=new Dictionary<string,string>(current){{"fingerprint",Mutations.Fingerprint(current)},{"newValue","EXPIRED"},{"delete","False"}};var expired=new ActionPreview("expired",ActionKind.SetEnvironment,"Fixture","Fixture","","","",true,false,DateTimeOffset.UtcNow.AddMinutes(-5));await Expect("P16 helper plan expiry checked at native boundary",()=>mutations.ExecutePlanAsync(new(expired,fields),CancellationToken.None));Check("P16 expired plan retained old value",(string?)env.GetValue("REVIEW")=="ORIGINAL");
         var longName=new string('N',5000);run.SetValue(longName,"fixture",RegistryValueKind.String);var row=new Row("review-long",new(){{"name",longName}},new(){{"kind","run-user"},{"key",keyPath+@"\Run"},{"name",longName},{"value","fixture"},{"view","Registry64"}});var preview=await mutations.PreviewAsync(new(ActionKind.DisableStartup,row.Id),row,null,CancellationToken.None);var result=await mutations.ExecuteAsync(preview.Token,CancellationToken.None);Check("P16 long history target preserves verified outcome",result.Status=="success"&&store.GetHistory().Any(x=>x.UndoId==result.UndoId));
         var newRow=new Row("User:REVIEW",new(),new(){{"scope","User"},{"name","REVIEW"},{"value","ORIGINAL"}});preview=await mutations.PreviewAsync(new(ActionKind.SetEnvironment,newRow.Id,new(){{"scope","User"},{"name","REVIEW"},{"value","RESTORE-STALE"}}),newRow,null,CancellationToken.None);var backupPath=Path.Combine(store.Root,"restore-race.nccbackup");store.Backup(backupPath);await mutations.RestoreAsync(backupPath,CancellationToken.None);result=await mutations.ExecuteAsync(preview.Token,CancellationToken.None);Check("P16 restore invalidates pending preview",result.Status=="failed"&&(string?)env.GetValue("REVIEW")=="ORIGINAL");
+    }
+    static async Task BoundedFileRegressions(string owned)
+    {
+        if(NativeSecurity.HasPackageIdentity||NativeSecurity.HasAppDataRedirection)
+        {
+            var policy=new Mutations(new AppStore(Path.Combine(owned,"host-policy")));
+            var preview=new ActionPreview("host-policy",ActionKind.EndProcess,"Fixture","PID 4","","","",false,false,DateTimeOffset.UtcNow.AddMinutes(1));
+            var guarded=await policy.ExecutePlanAsync(new(preview,new(){{"pid","4"},{"startTicks","0"}}),CancellationToken.None);
+            Check("P16 redirected host rejected at direct native boundary",guarded.Status=="failed"&&guarded.Message.Contains("chuyển hướng",StringComparison.Ordinal));
+            guarded=await policy.ExecuteAsync("nonexistent",CancellationToken.None);Check("P16 redirected host rejected at token boundary",guarded.Status=="failed"&&guarded.Message.Contains("chuyển hướng",StringComparison.Ordinal));
+        }
+        var path=Path.Combine(owned,"IPC tiếng Việt.bin");var bytes=System.Text.Encoding.UTF8.GetBytes("owned IPC payload");File.WriteAllBytes(path,bytes);
+        Check("P16 bounded native handle read exact bytes",NativeSecurity.ReadBounded(path,128).SequenceEqual(bytes));
+        await Expect("P16 oversized IPC file rejected",()=>Task.Run(()=>NativeSecurity.ReadBounded(path,4)));
+        await Expect("P16 missing IPC file rejected",()=>Task.Run(()=>NativeSecurity.ReadBounded(path+".missing",128)));
+        await Expect("P16 directory IPC rejected",()=>Task.Run(()=>NativeSecurity.ReadBounded(owned,128)));
+        using(var writer=new FileStream(path,FileMode.Open,FileAccess.Write,FileShare.ReadWrite))await Expect("P16 concurrently writable IPC rejected",()=>Task.Run(()=>NativeSecurity.ReadBounded(path,128)));
+        var link=path+".link";File.CreateSymbolicLink(link,path);try{await Expect("P16 IPC leaf symbolic link rejected",()=>Task.Run(()=>NativeSecurity.ReadBounded(link,128)));}finally{File.Delete(link);}
+        // Exercise the reviewed helper output path without elevating or invoking
+        // any Windows mutation. These two unpredictable GUID leaves are owned.
+        var requestRoot=Path.Combine(NativeSecurity.LocalRoot,"requests");Directory.CreateDirectory(requestRoot);using var parent=new DirectoryLease(requestRoot);
+        var id=Guid.NewGuid().ToString("N");var active=Path.Combine(requestRoot,id+".active");var result=Path.Combine(requestRoot,id+".result");
+        try
+        {
+            using(var stream=new FileStream(active,FileMode.CreateNew,FileAccess.Write,FileShare.None))stream.Flush(true);
+            using(var stream=new FileStream(result,FileMode.CreateNew,FileAccess.Write,FileShare.None))stream.Write(bytes);
+            bool refused=false;try{Elevation.WriteResult(id,new("success","fixture"));}catch(IOException){refused=true;}
+            Check("P16 helper result collision never overwrites leaf",refused&&File.ReadAllBytes(result).SequenceEqual(bytes));
+        }
+        finally{File.Delete(active);File.Delete(result);}
     }
     static async Task Expect(string name,Func<Task> action){try{await action();Fail(name+" (unexpected acceptance)");}catch(Exception e)when(e is AppException or ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception or UnauthorizedAccessException){Add("PASS "+name);}}
     static void Check(string name,bool condition){if(condition)Add("PASS "+name);else Fail(name);}

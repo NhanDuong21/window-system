@@ -63,8 +63,7 @@ public static class NativeSecurity
             try
             {
                 var root=Path.Combine(Marshal.PtrToStringUni(pointer)??throw new AppException("appdata","Không đọc được thư mục dữ liệu local."),"NyanControlCenter");
-                var resolved=DirectoryLease.ResolveAppRoot(root);
-                return (resolved,!resolved.Equals(root,StringComparison.OrdinalIgnoreCase));
+                return DirectoryLease.ResolveAppRoot(root);
             }finally{Marshal.FreeCoTaskMem(pointer);}
     }
     public static void CheckLocalPath(string path, bool allowMissingLeaf=false)
@@ -187,7 +186,7 @@ public sealed class DirectoryLease : IDisposable
     [DllImport("kernel32.dll",SetLastError=true)]static extern bool GetFileInformationByHandle(SafeFileHandle handle,out DirectoryInfoNative info);
     [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern uint GetFinalPathNameByHandle(SafeFileHandle h,StringBuilder path,uint count,uint flags);
     public SafeFileHandle Handle{get;}
-    internal static string ResolveAppRoot(string expected)
+    internal static (string Root,bool Redirected) ResolveAppRoot(string expected)
     {
         // Some Desktop Bridge hosts keep the logical LocalAppData path even
         // with RETURN_FILTER_REDIRECTION_TARGET. Resolve only our fixed app
@@ -202,7 +201,7 @@ public sealed class DirectoryLease : IDisposable
         var relative=Path.GetRelativePath(packages,final).Replace(Path.AltDirectorySeparatorChar,Path.DirectorySeparatorChar);
         var packageCache=System.Text.RegularExpressions.Regex.IsMatch(relative,@"^[A-Za-z0-9.-]+_[A-Za-z0-9]{13}\\LocalCache\\Local\\NyanControlCenter$",System.Text.RegularExpressions.RegexOptions.IgnoreCase);
         if(count==0||count>=32768||(!final.Equals(expected,StringComparison.OrdinalIgnoreCase)&&!packageCache))throw new AppException("appdata","Đích chuyển hướng không thuộc thư mục dữ liệu app được hỗ trợ.");
-        NativeSecurity.CheckLocalPath(final);return final;
+        NativeSecurity.CheckLocalPath(final);return (final,packageCache||!final.Equals(expected,StringComparison.OrdinalIgnoreCase));
     }
     public DirectoryLease(string directory)
     {

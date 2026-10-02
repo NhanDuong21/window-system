@@ -21,7 +21,7 @@ public sealed class AppStore
 
     public AppStore(string? root = null)
     {
-        _root = Path.GetFullPath(root ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "NyanControlCenter"));
+        _root = Path.GetFullPath(root ?? NativeSecurity.LocalRoot);
         EnsureSafeDirectory(_root);
         Directory.CreateDirectory(_root);
         EnsureSafeDirectory(_root);
