@@ -6,7 +6,7 @@ Phase01 VERIFIED: launcher trên máy có cả Explorer/host elevated đã mở 
 
 Không tác động startup/PATH/service/temp thật. SDK first-run đã tạo một ASP.NET development certificate; Lead xóa đúng certificate và key mới sinh theo timestamp, không đụng cert khác. Fixture HKCU random subtree đã dọn; RecycleFile test restore đúng file sở hữu. Tài nguyên còn: .tools SDK, artifacts/native-probe, .evidence/.runtime ignored, không native collector nền cố định.
 
-Tiếp theo: push branch riêng/PR sau commit HANDOVER. Code/artifact đã kiểm xong; chỉ nghiệm thu manual ngoài host/UAC/service còn lại, không chạy trên cấu hình thật trong phát triển. Source nền nhiều module được tích hợp cùng lúc theo ownership; mỗi phase có commit đóng nghiệm thu riêng và status trung thực. Checkpoint không tự khởi động lại agent.
+Branch đã push, draft PR #1 mở tại https://github.com/NhanDuong21/window-system/pull/1 và gắn chat. Handover697922f, artifact15ca7b4; commit sau chỉ docs Git-status. Code/artifact đã kiểm xong; chỉ nghiệm thu manual ngoài host/UAC/service còn lại, không chạy trên cấu hình thật trong phát triển. Source nền nhiều module được tích hợp cùng lúc theo ownership; mỗi phase có commit đóng nghiệm thu riêng và status trung thực. Checkpoint không tự khởi động lại agent.
 
 Phase 02 — VERIFIED: WindowsChecks + integration: CPU interval400ms, RAM/drives/uptime/build thật; .evidence/reader-checks/results.txt. Source nền 3588d39; checkpoint commit tìm bằng git log --grep=phase02.
 Phase 03 — VERIFIED: Inventory registry32/64 user/machine + Appx thật Ready; filter/sort UI; không Win32_Product. Source nền 3588d39; checkpoint commit tìm bằng git log --grep=phase03.

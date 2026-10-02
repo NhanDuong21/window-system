@@ -73,7 +73,7 @@ Không gọi nặng để vẽ chart; polling5s chỉ active Dashboard/Processes
 
 ## Artifact và Git
 
-Artifact version1.0.0 source **15ca7b457150b39ea80029e2641f034a09d6cfbf**, branch **nyan/control-center**, đúng remote `NhanDuong21/window-system` PUBLIC. Binaries/evidence/runtime không đưa lên Git; không push main, merge hoặc public release. Trạng thái push/PR được cập nhật sau khi giao docs.
+Artifact version1.0.0 source **15ca7b457150b39ea80029e2641f034a09d6cfbf**, branch **nyan/control-center**, đúng remote `NhanDuong21/window-system` PUBLIC. Branch đã push; [draft PR #1](https://github.com/NhanDuong21/window-system/pull/1) đã mở và gắn vào chat. Commit bàn giao chính697922f; commit sau chỉ chốt trạng thái Git trong docs. Binaries/evidence/runtime không đưa lên Git; không push main, merge hoặc public release.
 
 EXE SHA-256: `EDCB63E8C4BACEDD1525D417E36779D836F2EFC2F63940D23F1169616EF250FE`.
 
