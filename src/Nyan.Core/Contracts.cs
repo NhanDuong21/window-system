@@ -18,7 +18,8 @@ public sealed record ScanReport(string Root, List<Row> Rows, long Files, long By
 public enum ActionKind { EndProcess, DisableStartup, EnableStartup, SetEnvironment, DeleteEnvironment, StartService, StopService, RestartService, CleanupFiles, Undo }
 public sealed record ActionRequest(ActionKind Kind, string TargetId, Dictionary<string,string>? Values = null, List<string>? SelectedIds = null);
 public sealed record ActionPreview(string Token, ActionKind Kind, string Title, string Target, string Before, string After, string Warning, bool CanUndo, bool RequiresElevation, DateTimeOffset ExpiresAt);
-public sealed record ActionOutcome(string Status, string Message, int Succeeded = 0, int Failed = 0, string? UndoId = null);
+public sealed record RecycleReceipt(string OriginalPath, string Identity, string RecyclePath);
+public sealed record ActionOutcome(string Status, string Message, int Succeeded = 0, int Failed = 0, string? UndoId = null, List<RecycleReceipt>? Recycled = null);
 public sealed record HistoryEntry(string Id, DateTimeOffset At, string Action, string Target, string Status, string Message, string? UndoId = null);
 public sealed record Snapshot(string Id, string Name, DateTimeOffset At, int SchemaVersion, Dictionary<string,List<Row>> Modules);
 public sealed record SnapshotChange(string Module, string Kind, string Key, string Before, string After);

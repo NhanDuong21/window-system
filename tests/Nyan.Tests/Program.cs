@@ -13,6 +13,7 @@ public static class Program
     public static async Task<int> Main(string[] args)
     {
         if(args.FirstOrDefault()=="--owned-child") { await Task.Delay(TimeSpan.FromMinutes(5));return 0; }
+        if(args.FirstOrDefault()=="--acceptance-safe")return await SafeAsync(Path.GetFullPath(args[1]));
         string evidence=Path.GetFullPath(args.Length>0?args[0]:".evidence/verify");Directory.CreateDirectory(evidence);File.WriteAllText(Path.Combine(evidence,".nyan-owned"),"Nyan test resources only");File.WriteAllText(Path.Combine(evidence,".nyan-fixture"),"Nyan test resources only");
         var owned=Path.Combine(evidence,"mutation-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(owned);File.WriteAllText(Path.Combine(owned,".nyan-owned"),"Nyan tests own this tree");
         var keyPath=@"Software\NyanControlCenter.Tests\"+Guid.NewGuid().ToString("N");var fixture=new MutationFixture(owned,keyPath);var store=new AppStore(Path.Combine(owned,"store"));var mutations=new Mutations(store,fixture);
@@ -72,6 +73,25 @@ public static class Program
             File.WriteAllText(Path.Combine(evidence,"summary.json"),JsonSerializer.Serialize(new{passed,failed,skipped,unverified=new[]{"UAC real System environment/service action","Real service install/start/stop","User temp cleanup","Real startup/PATH mutations","Cross-account DPAPI restore (unsupported)"}},new JsonSerializerOptions{WriteIndented=true}));
         }
         Console.WriteLine($"PASS={passed} FAIL={failed} SKIP={skipped}; evidence: ignored .evidence/verify");return failed==0?0:1;
+    }
+    static async Task<int> SafeAsync(string evidence)
+    {
+        Directory.CreateDirectory(evidence);File.WriteAllText(Path.Combine(evidence,".nyan-fixture"),"Owned application data checks only");
+        try
+        {
+            foreach(var result in await ServiceChecks.RunAsync(evidence))Add(result);
+            foreach(var result in await StoreChecks.RunAsync(evidence))Add(result);
+            using var reader=new WindowsReader();
+            foreach(var module in new[]{Module.Dashboard,Module.Applications,Module.Startup,Module.Processes,Module.Services,Module.DevTools,Module.Ports,Module.Environment,Module.Network})
+            {
+                var result=await reader.ReadAsync(module,false,CancellationToken.None);
+                Check($"acceptance native read-only {module}: {result.State}",result.State is ResultState.Ready or ResultState.Partial or ResultState.Empty);
+            }
+        }
+        catch(Exception error){Fail("Safe harness: "+Privacy.Error(error));}
+        File.WriteAllLines(Path.Combine(evidence,"tests.txt"),Results);
+        File.WriteAllText(Path.Combine(evidence,"summary.json"),JsonSerializer.Serialize(new{passed,failed,skipped,scope="Simulated service orchestration, isolated app store/files and native read-only; no registry/service/startup/environment/cleanup mutation",productionMutations="NOT_RUN",explorer="WAITING_FOR_USER"},new JsonSerializerOptions{WriteIndented=true}));
+        Console.WriteLine($"PASS={passed} FAIL={failed} SKIP={skipped}; {evidence}");return failed==0?0:1;
     }
     static async Task EnvironmentTests(Mutations mutations,AppStore store,string keyPath)
     {

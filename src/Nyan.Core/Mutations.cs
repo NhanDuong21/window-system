@@ -121,15 +121,15 @@ public sealed class Mutations
             case ActionKind.Undo:return Undo(fields,ct);
             case ActionKind.StartService:
             case ActionKind.StopService:
-            case ActionKind.RestartService:await ServicesNative.PerformAsync(fields["name"],plan.Preview.Kind,fields["fingerprint"],ct);return new("success","Đã kiểm tra service đạt trạng thái yêu cầu.",1);
+            case ActionKind.RestartService:return await ServicesNative.PerformAsync(fields["name"],plan.Preview.Kind,fields["fingerprint"],ct);
             case ActionKind.CleanupFiles:return await CleanupAsync(plan.Files??new(),ct);
             default:throw new AppException("action","Thao tác không được hỗ trợ.");
         }
     }
-    ActionOutcome RecordOutcome(MutationPlan plan,ActionOutcome outcome)
+    internal ActionOutcome RecordOutcome(MutationPlan plan,ActionOutcome outcome)
     {
         try{store.AddHistory(new(Guid.NewGuid().ToString("N"),DateTimeOffset.Now,SafeHistory(plan.Preview.Title,128),SafeHistory(plan.Preview.Target,4096),outcome.Status,SafeHistory(outcome.Message,4096),outcome.UndoId));return outcome;}
-        catch{return outcome with{Message=outcome.Message+" Không lưu được lịch sử; kết quả native phía trên vẫn là trạng thái đã xác minh."};}
+        catch{return outcome with{Message=outcome.Message+" Không lưu được lịch sử; thông tin kết quả phía trên được giữ nguyên."};}
     }
     static string SafeHistory(string text,int limit)=>new string(text.Take(limit).Select(c=>char.IsControl(c)?' ':c).ToArray());
     async Task ValidateEndpointAsync(Dictionary<string,string> fields,CancellationToken ct)
@@ -241,10 +241,10 @@ public sealed class Mutations
     },ct);
     async Task<ActionOutcome> CleanupAsync(List<Dictionary<string,string>> files,CancellationToken ct)
     {
-        int success=0,failed=0;var reasons=new HashSet<string>();var quarantine=Path.Combine(store.Root,"quarantine");Directory.CreateDirectory(quarantine);NativeSecurity.CheckLocalPath(quarantine);
+        int success=0,failed=0;var receipts=new List<RecycleReceipt>();var reasons=new HashSet<string>();var quarantine=Path.Combine(store.Root,"quarantine");Directory.CreateDirectory(quarantine);NativeSecurity.CheckLocalPath(quarantine);
         foreach(var f in files)
         {
-            if(ct.IsCancellationRequested)return new(success>0?"partial":"cancelled",$"Đã hủy; {success} file vào Recycle Bin, {failed} bỏ qua.",success,failed);
+            if(ct.IsCancellationRequested)return new(success>0?"partial":"cancelled",$"Đã hủy; {success} file vào Recycle Bin, {failed} bỏ qua.",success,failed,Recycled:receipts);
             string? moved=null;string? backupId=null;
             try
             {
@@ -254,7 +254,7 @@ public sealed class Mutations
                     if(lease.Identity!=f["identity"]||lease.Length.ToString()!=f["length"]||lease.WriteTicks.ToString()!=f["lastWriteTicks"])throw new AppException("stale","Danh tính file thay đổi.");
                     moved=Path.Combine(quarantine,Guid.NewGuid().ToString("N")+"-"+Path.GetFileName(f["path"]));backupId=Guid.NewGuid().ToString("N");store.PutBackup(backupId,new(){{"type","quarantine"},{"path",f["path"]},{"quarantine",moved},{"identity",lease.Identity}});lease.RenameTo(moved);
                 }
-                var recycled=await RecycleFile.RecycleAsync(moved);if(!recycled.Recycled||File.Exists(moved))throw new AppException("recycle","Windows chưa xác nhận file vào Recycle Bin; giữ/khôi phục file an toàn.");success++;store.RemoveBackup(backupId);
+                var recycled=await RecycleFile.RecycleAsync(moved);if(!recycled.Recycled||File.Exists(moved))throw new AppException("recycle","Windows chưa xác nhận file vào Recycle Bin; giữ/khôi phục file an toàn.");success++;if(recycled.RecyclePath!=null)receipts.Add(new(f["path"],f["identity"],recycled.RecyclePath));store.RemoveBackup(backupId);
             }
             catch(Exception error)
             {
@@ -263,7 +263,7 @@ public sealed class Mutations
             }
             await Task.Yield();
         }
-        return new(failed==0?"success":success==0?"failed":"partial",$"Recycle Bin: {success}; bỏ qua/thất bại: {failed}. {string.Join(" ",reasons.Take(3))}",success,failed);
+        return new(failed==0?"success":success==0?"failed":"partial",$"Recycle Bin: {success}; bỏ qua/thất bại: {failed}. {string.Join(" ",reasons.Take(3))}",success,failed,Recycled:receipts);
     }
 }
 
@@ -280,12 +280,19 @@ public static class Elevation
             var executable=Environment.ProcessPath??throw new AppException("executable","Không xác minh được executable của app.");
             using var process=Process.Start(new ProcessStartInfo(executable){UseShellExecute=true,Verb="runas",Arguments="--elevated-action "+id,WorkingDirectory=AppContext.BaseDirectory})??throw new AppException("uac","Không mở được helper UAC.");
             using var timeout=CancellationTokenSource.CreateLinkedTokenSource(ct);timeout.CancelAfter(TimeSpan.FromMinutes(2));
-            try{await process.WaitForExitAsync(timeout.Token);}catch(OperationCanceledException){return new("failed","Helper chưa xác nhận kết quả. Không lặp thao tác; tải lại để kiểm tra trạng thái Windows.");}
-            if(!File.Exists(result))return new("failed","Helper không trả kết quả; thao tác chưa được xác nhận.");
-            return JsonSerializer.Deserialize<ActionOutcome>(NativeSecurity.Unprotect(NativeSecurity.ReadBounded(result,65536)))??new("failed","Kết quả helper không hợp lệ.");
+            try{await process.WaitForExitAsync(timeout.Token);}catch(OperationCanceledException){return Unconfirmed(plan);}
+            if(!File.Exists(result))return Unconfirmed(plan);
+            try{return JsonSerializer.Deserialize<ActionOutcome>(NativeSecurity.Unprotect(NativeSecurity.ReadBounded(result,65536)))??Unconfirmed(plan);}catch{return Unconfirmed(plan);}
         }
         catch(Win32Exception e)when(e.NativeErrorCode==1223){return new("cancelled","Người dùng đã hủy UAC; không thay đổi hệ thống.");}
         finally{if(File.Exists(active))File.Delete(active);if(File.Exists(request))File.Delete(request);if(File.Exists(result))File.Delete(result);}
+    }
+    internal static ActionOutcome Unconfirmed(MutationPlan plan,Func<string,string>? readState=null)
+    {
+        string state="chưa xác định; cần tải lại";
+        if(plan.Preview.Kind is ActionKind.StartService or ActionKind.StopService or ActionKind.RestartService)
+            try{state=readState?.Invoke(plan.Fields["name"])??ServicesNative.StateName(ServicesNative.Read(plan.Fields["name"]).State);}catch{}
+        return new("partial","Helper đã được mở nhưng chưa xác nhận kết quả từng bước. Chưa biết lệnh Windows nào đã được nhận; hủy chờ không hoàn tác lệnh đã gửi. Trạng thái đọc lại: "+state+". Không lặp thao tác hoặc tự khôi phục; tải lại trước thao tác mới.",0,1);
     }
     public static MutationPlan Consume(string id)
     {

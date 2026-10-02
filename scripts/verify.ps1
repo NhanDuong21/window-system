@@ -1,10 +1,10 @@
-param([switch]$SkipUI)
+﻿param([switch]$SkipUI)
 . "$PSScriptRoot/common.ps1"
-$evidence=Join-Path $script:RepoRoot '.evidence/verify'
+$evidence=Join-Path $script:RepoRoot ('.evidence/verify-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 Invoke-Dotnet restore NyanControlCenter.sln --locked-mode
 Invoke-Dotnet build NyanControlCenter.sln -c Release --no-restore
-& $script:Dotnet 'tests/Nyan.Tests/bin/Release/net10.0-windows/Nyan.Tests.dll' $evidence
+& $script:Dotnet 'tests/Nyan.Tests/bin/Release/net10.0-windows/Nyan.Tests.dll' --acceptance-safe $evidence
 $testExit=$LASTEXITCODE
 if(-not $SkipUI) {
     $uiRoot=Join-Path $evidence 'ui'
@@ -17,7 +17,7 @@ if(-not $SkipUI) {
     if(-not(Test-Path -LiteralPath $resultFile)) { throw 'UI tests không trả kết quả.' }
     $uiResult=Get-Content -LiteralPath $resultFile
     if($uiResult[0] -ne 'PASS') { throw ($uiResult -join [Environment]::NewLine) }
-    Write-Host "UI: $($uiResult.Count-1) kiểm tra/capture; evidence ignored .evidence/verify/ui"
+    Write-Host "UI controls/capture: $uiRoot (không phải thao tác Explorer/UAC)"
 } else { Write-Host 'SKIP UI: do tham số -SkipUI, không tính PASS.' }
-Write-Host 'CHƯA CHẠY: UAC thật, điều khiển service thật, PATH/startup thật và cleanup Temp User. Test mutation dùng fixture có marker.'
+Write-Host 'CHƯA CHẠY: Explorer/UAC và production Windows mutation. Chỉ service mô phỏng, dữ liệu app/file riêng và native read-only; resource cases ở Nghiem-Thu-Nyan.cmd cần xác nhận đối tượng riêng.'
 if($testExit -ne 0) { throw "Test suite thất bại ($testExit)." }

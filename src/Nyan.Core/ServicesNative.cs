@@ -64,22 +64,65 @@ public static class ServicesNative
         }
         else if(s.State!=1||s.StartType==4)throw new AppException("service-state","Chỉ start service đang dừng và không bị Disabled.");
     }
-    public static async Task PerformAsync(string name,ActionKind action,string fingerprint,CancellationToken ct)
+    public static Task<ActionOutcome> PerformAsync(string name,ActionKind action,string fingerprint,CancellationToken ct)
+        => PerformAsync(name,action,fingerprint,ct,()=>new NativeSession(name),TimeSpan.FromSeconds(25),token=>Task.Delay(250,token));
+
+    internal interface ISession : IDisposable
     {
-        var current=Read(name);if(current.Fingerprint!=fingerprint)throw new AppException("stale","Cấu hình/trạng thái service thay đổi; hãy tạo preview mới.");ValidateAction(current,action);
-        var manager=Manager();var service=IntPtr.Zero;
+        ServiceIdentity Identity(); uint State(); void Start(); void Stop();
+    }
+    sealed class NativeSession : ISession
+    {
+        readonly string name; readonly IntPtr manager,service;
+        public NativeSession(string name)
+        {
+            this.name=name;manager=Manager();service=OpenService(manager,name,4|0x10|0x20);
+            if(service==IntPtr.Zero){var error=Marshal.GetLastWin32Error();CloseServiceHandle(manager);throw new Win32Exception(error);}
+        }
+        public ServiceIdentity Identity()=>Read(name);
+        public uint State(){if(!QueryServiceStatusEx(service,0,out var s,Marshal.SizeOf<Status>(),out _))throw new Win32Exception(Marshal.GetLastWin32Error());return s.State;}
+        public void Start(){if(!StartService(service,0,IntPtr.Zero))throw new Win32Exception(Marshal.GetLastWin32Error());}
+        public void Stop(){if(!ControlService(service,1,out _))throw new Win32Exception(Marshal.GetLastWin32Error());}
+        public void Dispose(){CloseServiceHandle(service);CloseServiceHandle(manager);}
+    }
+    internal static async Task<ActionOutcome> PerformAsync(string name,ActionKind action,string fingerprint,CancellationToken ct,Func<ISession> open,TimeSpan timeout,Func<CancellationToken,Task> delay)
+    {
+        ISession? session=null;var accepted=new List<string>();var completed=new List<string>();string step="kiểm tra trước lệnh";
         try
         {
-            service=OpenService(manager,name,4|0x10|0x20);if(service==IntPtr.Zero)throw new Win32Exception(Marshal.GetLastWin32Error());
             ct.ThrowIfCancellationRequested();
-            if(action is ActionKind.StopService or ActionKind.RestartService){if(!ControlService(service,1,out _))throw new Win32Exception(Marshal.GetLastWin32Error());await WaitAsync(service,1,ct);}
-            if(action is ActionKind.StartService or ActionKind.RestartService){if(!StartService(service,0,IntPtr.Zero))throw new Win32Exception(Marshal.GetLastWin32Error());await WaitAsync(service,4,ct);}
-        }finally{if(service!=IntPtr.Zero)CloseServiceHandle(service);CloseServiceHandle(manager);}
+            if(action is not (ActionKind.StartService or ActionKind.StopService or ActionKind.RestartService))throw new AppException("action","Thao tác service không hợp lệ.");
+            session=open();var current=session.Identity();
+            if(current.Name!=name||current.Fingerprint!=fingerprint)throw new AppException("stale","Cấu hình/trạng thái service thay đổi; hãy tạo preview mới.");ValidateAction(current,action);
+            if(action is ActionKind.StopService or ActionKind.RestartService)
+            {
+                step="gửi Stop";ct.ThrowIfCancellationRequested();session.Stop();accepted.Add("Stop");step="chờ Stopped";
+                await WaitAsync(session,1,timeout,delay,ct);completed.Add("Stop → Stopped");
+            }
+            if(action is ActionKind.StartService or ActionKind.RestartService)
+            {
+                step="gửi Start";ct.ThrowIfCancellationRequested();session.Start();accepted.Add("Start");step="chờ Running";
+                await WaitAsync(session,4,timeout,delay,ct);completed.Add("Start → Running");
+            }
+            // Verify again after the final wait; do not describe an immediately changed service as stable success.
+            var state=session.State();var expected=action==ActionKind.StopService?1u:4u;
+            return new(state==expected?"success":"partial",Describe(accepted,completed)+$" Trạng thái đọc lại: {StateName(state)}."+(state==expected?"":" Trạng thái đã đổi; tải lại trước thao tác mới."),state==expected?1:0,state==expected?0:1);
+        }
+        catch(Exception error)
+        {
+            string state;try{state=session==null?"chưa đọc được":StateName(session.State());}catch{state="chưa xác định; cần tải lại";}
+            var sent=accepted.Count>0;
+            return new(sent?"partial":error is OperationCanceledException?"cancelled":"failed",
+                Describe(accepted,completed)+$" Bước chưa hoàn tất: {step}. "+(error is OperationCanceledException?(sent?"Đã hủy chờ; lệnh Windows đã nhận không được hoàn tác.":"Đã hủy trước khi gửi lệnh."):Privacy.Error(error))+$" Trạng thái đọc lại: {state}. Không tự chạy thao tác khôi phục.",0,sent||error is not OperationCanceledException?1:0);
+        }
+        finally{session?.Dispose();}
     }
-    static async Task WaitAsync(IntPtr h,uint desired,CancellationToken ct)
+    static string Describe(List<string> accepted,List<string> completed)=>$"Windows nhận: {(accepted.Count==0?"chưa gửi lệnh":string.Join(", ",accepted))}. Hoàn tất: {(completed.Count==0?"chưa xác minh bước nào":string.Join(", ",completed))}.";
+    internal static string StateName(uint state)=>state switch{1=>"Stopped (1)",2=>"Start pending (2)",3=>"Stop pending (3)",4=>"Running (4)",5=>"Continue pending (5)",6=>"Pause pending (6)",7=>"Paused (7)",_=>$"native {state}"};
+    static async Task WaitAsync(ISession session,uint desired,TimeSpan timeout,Func<CancellationToken,Task> delay,CancellationToken ct)
     {
-        var until=DateTime.UtcNow.AddSeconds(25);
-        while(DateTime.UtcNow<until){if(!QueryServiceStatusEx(h,0,out var s,Marshal.SizeOf<Status>(),out _))throw new Win32Exception(Marshal.GetLastWin32Error());if(s.State==desired)return;await Task.Delay(250,ct);}
+        var clock=System.Diagnostics.Stopwatch.StartNew();
+        while(clock.Elapsed<timeout){ct.ThrowIfCancellationRequested();if(session.State()==desired)return;await delay(ct);}
         throw new AppException("service-timeout","Hết thời gian chờ; service có thể đã nhận lệnh. Tải lại để kiểm tra trạng thái thực tế.");
     }
 }
