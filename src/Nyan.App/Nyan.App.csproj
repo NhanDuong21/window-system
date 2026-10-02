@@ -1,0 +1,1 @@
+<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>WinExe</OutputType><UseWPF>true</UseWPF><AssemblyName>NyanControlCenter</AssemblyName><Version>1.0.2</Version><ApplicationManifest>app.manifest</ApplicationManifest><StartupObject>Nyan.App.Program</StartupObject></PropertyGroup><ItemGroup><ProjectReference Include="../Nyan.Core/Nyan.Core.csproj"/></ItemGroup></Project>
