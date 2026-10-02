@@ -4,7 +4,7 @@ Mỗi phase: NOT_STARTED → IN_PROGRESS → IMPLEMENTED → VERIFIED hoặc BLO
 
 | Phase | Phạm vi/tiêu chí | Phụ thuộc | Trạng thái |
 |---|---|---|---|
-| 01 | Windows native, skeleton, storage, dữ liệu thật, build | — | IN_PROGRESS |
+| 01 | Windows native, skeleton, storage, dữ liệu thật, build | — | VERIFIED |
 | 02 | CPU interval, RAM, ổ, uptime, build, lỗi | 01 | VERIFIED |
 | 03 | Registry 32/64 user/machine, Appx, filter | 01 | VERIFIED |
 | 04 | Registry Run user và folder user enable/disable; nguồn khác read-only | 01,14 | VERIFIED |
