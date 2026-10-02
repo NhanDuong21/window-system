@@ -627,6 +627,8 @@ public sealed class MainWindow : Window
 
     internal int VisibleRowsForTest => _table.Items.Count;
     internal int SelectedRowsForTest => _table.SelectedItems.Count;
+    internal void SelectFirstForTest() => _table.SelectedItem = _table.Items.Cast<Row>().FirstOrDefault();
+    internal string? SelectedIdForTest => SelectedRow?.Id;
     internal bool RevealForTest => _reveal.IsChecked == true;
     internal string StatusForTest => _status.Text;
     internal Module CurrentModuleForTest => _module;

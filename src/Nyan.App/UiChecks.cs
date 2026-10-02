@@ -40,6 +40,9 @@ public static class UiChecks
         results.Add($"METRIC filter-12000-rows-ms={stopwatch.Elapsed.TotalMilliseconds:F2}");
         window.FilterForTest("không có trong fixture"); Check("filter-empty", window.VisibleRowsForTest == 0);
         window.FilterForTest(""); Check("filter-reset", window.VisibleRowsForTest == 12000);
+        window.SelectFirstForTest();var selectedId=window.SelectedIdForTest;
+        window.ShowResultForTest(new(Module.Applications,new(){new("name","Tên"),new("path","Đường dẫn"),new("source","Nguồn")},rows.Select(r=>r with{Cells=new(r.Cells)}).ToList()));
+        Check("refresh-retains-selected-stable-row",window.SelectedRowsForTest==1&&window.SelectedIdForTest==selectedId);
         window.Width = 940; window.Height = 680;
         await LayoutAsync(window); SavePng(window, Path.Combine(evidenceDirectory, "resized-unicode.png"));
         Check("minimum-window-layout", window.ActualWidth >= window.MinWidth && window.ActualHeight >= window.MinHeight);
