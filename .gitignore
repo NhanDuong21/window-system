@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+.tools/
+.evidence/
+artifacts/
+.runtime/
+*.user
+*.suo
+*.log
+*.dmp
+.impeccable/
+*.nccbackup
+*.nccsnapshot
