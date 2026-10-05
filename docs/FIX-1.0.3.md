@@ -1,5 +1,7 @@
 # Đợt sửa tập trung 1.0.3
 
+Quyết định tiếp theo: dừng vòng sửa lớn và chuyển sang dùng thử. Gói mới `NyanControlCenter-1.0.3-win-x64-docs1` sửa hướng dẫn trong ZIP, giữ nguyên binary đã kiểm; thông tin hiện hành ở [HANDOVER.md](HANDOVER.md). Các kết quả dưới đây thuộc đúng binary1.0.3 được giữ lại; không nhận đã giải quyết spikeCPU hoặc hoàn tất Explorer/live-state/Windows/UAC.
+
 Giữ WPF/.NET10, UI tiếng Việt, 14 màn và phạm vi 18 phase. Không mở rộng quyền admin/app, không đổi ngân sách hiệu năng. Năm lỗi có nguyên nhân rõ đã sửa; CPU là nhánh điều tra riêng, chưa tuyên bố đã giải quyết spike cũ.
 
 | Finding | Sửa | Regression |

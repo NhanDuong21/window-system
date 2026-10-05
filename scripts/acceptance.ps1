@@ -7,6 +7,7 @@ $folder=Join-Path $repoRoot ('artifacts/'+$release.folder)
 $app=Join-Path $folder 'NyanControlCenter.exe'
 $manifest=Get-Content -LiteralPath (Join-Path $folder 'build-manifest.json') -Raw | ConvertFrom-Json
 if($manifest.version -ne $release.version -or $manifest.rid -ne 'win-x64' -or $manifest.files.Count -lt 1) { throw 'Release manifest mismatch.' }
+if($release.packageId -and $manifest.packageId -ne $release.packageId) { throw 'Package revision mismatch.' }
 foreach($file in $manifest.files) {
     $path=[IO.Path]::GetFullPath((Join-Path $folder $file.path))
     if(-not $path.StartsWith($folder+'\',[StringComparison]::OrdinalIgnoreCase)) { throw 'Manifest path outside release.' }
@@ -15,10 +16,11 @@ foreach($file in $manifest.files) {
 $id=[guid]::NewGuid().ToString('N')
 $root=Join-Path $repoRoot ('.evidence/acceptance-'+$id)
 New-Item -ItemType Directory -Path $root | Out-Null
-@{product='Nyan acceptance';id=$id;root=$root;at=(Get-Date).ToUniversalTime().ToString('o');version=[string]$manifest.version;sourceCommit=[string]$manifest.sourceCommit;exeSha256=[string]$manifest.sha256} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'ownership.json') -Encoding utf8
+@{product='Nyan acceptance';id=$id;root=$root;at=(Get-Date).ToUniversalTime().ToString('o');version=[string]$manifest.version;sourceCommit=[string]$manifest.sourceCommit;exeSha256=[string]$manifest.sha256;packageId=[string]$manifest.packageId;documentationCommit=[string]$manifest.documentationCommit} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'ownership.json') -Encoding utf8
 $declaration=Read-Host 'Did YOU open Nghiem-Thu-Nyan.cmd from File Explorer? Type EXPLORER or leave blank'
 @{at=(Get-Date).ToUniversalTime().ToString('o');explorer=if($declaration -ceq 'EXPLORER'){'USER_DECLARED'}else{'UNVERIFIED'};basis='Human declaration, not inferred from child process'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'entry-declaration.json') -Encoding utf8
 Write-Host "Release $($manifest.version), source $($manifest.sourceCommit)"
+if($manifest.packageId) { Write-Host "Package $($manifest.packageId), documentation $($manifest.documentationCommit)" }
 Write-Host "EXE SHA256 $($manifest.sha256)"
 Write-Host "Private evidence: $root"
 function Invoke-Acceptance([string]$mode,[string]$resultLeaf) {

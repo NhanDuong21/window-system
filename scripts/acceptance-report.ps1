@@ -21,6 +21,8 @@ function Get-NyanPerformanceResult([string]$Path) {
     } catch { return [pscustomobject]@{result='FAIL';cpu='FAIL';firstFrame='FAIL';memory='FAIL';metrics=$null;reason='Số đo thiếu, sai định dạng hoặc ngân sách đã thay đổi'} }
 }
 function Write-NyanAcceptanceSummary([string]$Root,[string]$Declaration,[AllowNull()][string]$Observation=$null) {
+    $identity=$null
+    try { $identity=Read-NyanEvidenceJson (Join-Path $Root 'ownership.json') } catch { }
     $native='NOT_RUN';$persistence='NOT_RUN';$ordinary='NOT_RUN';$reopen='WAITING_FOR_USER';$human='WAITING_FOR_USER';$context=$null
     $resultPath=Join-Path $Root 'result.txt'
     if(Test-Path -LiteralPath $resultPath) { $head=@(Get-Content -LiteralPath $resultPath)[0];$native=if($head -ceq 'PASS'){'PASS'}else{'FAIL'} }
@@ -36,7 +38,7 @@ function Write-NyanAcceptanceSummary([string]$Root,[string]$Declaration,[AllowNu
     } catch { $reopen='FAIL' }
     if(-not [string]::IsNullOrWhiteSpace($Observation)) { $human=if($Observation.Trim() -ceq 'OK'){'PASS'}else{'FAIL'} }
     $automatic=if(@($native,$persistence,$ordinary,$performance.result,$reopen,$human) -contains 'FAIL'){'FAIL'}else{'PARTIAL'}
-    $summary=[ordered]@{at=(Get-Date).ToUniversalTime().ToString('o');explorer=if($Declaration -ceq 'EXPLORER'){'USER_DECLARED'}else{'UNVERIFIED'};nativeRead=$native;privatePersistence=$persistence;ordinaryUser=$ordinary;performance=$performance;uiReopen=$reopen;humanUi=$human;humanObservation=$Observation;productionMutations='NOT_RUN';uac='WAITING_FOR_USER';automaticResult=$automatic}
+    $summary=[ordered]@{at=(Get-Date).ToUniversalTime().ToString('o');version=$identity.version;packageId=$identity.packageId;sourceCommit=$identity.sourceCommit;exeSha256=$identity.exeSha256;documentationCommit=$identity.documentationCommit;explorer=if($Declaration -ceq 'EXPLORER'){'USER_DECLARED'}else{'UNVERIFIED'};nativeRead=$native;privatePersistence=$persistence;ordinaryUser=$ordinary;performance=$performance;uiReopen=$reopen;humanUi=$human;humanObservation=$Observation;productionMutations='NOT_RUN';uac='WAITING_FOR_USER';automaticResult=$automatic}
     # A summary may be updated; the original observations and measurements remain intact.
     $temporary=Join-Path $Root ('summary-'+[guid]::NewGuid().ToString('N')+'.tmp')
     try { $summary | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporary -Encoding utf8;Move-Item -LiteralPath $temporary -Destination (Join-Path $Root 'acceptance-summary.json') -Force } finally { if(Test-Path -LiteralPath $temporary){Remove-Item -LiteralPath $temporary} }

@@ -1,4 +1,10 @@
-# Bàn giao đợt sửa 1.0.3 — PARTIAL
+# 1.0.3-docs1 — chuẩn bị nghiệm thu sử dụng
+
+Dừng vòng sửa lớn theo yêu cầu user. Gói `NyanControlCenter-1.0.3-win-x64-docs1` hoàn thiện hướng dẫn ngay trong ZIP, giữ nguyên binary/source3dddf48 và ZIP cũ. Đây là revision tài liệu của release1.0.3, không phải bản build mới. Manifest tách `binarySourceCommit` và `documentationCommit`, ghi `packageId`; launcher/summary giữ định danh này khi nghiệm thu. Kết quả kiểm gói và push sẽ ghi tại đây sau hoàn tất.
+
+[OPERATIONS.md](OPERATIONS.md) phân biệt bỏ bản sao với hoàn tác Startup, quota dùng chung và mục được bảo vệ. Hai bài tiếp theo: `Nghiem-Thu-Nyan.cmd` mở từ Explorer để kiểm vùng thử/hai phiên UI; `Mo-Nyan.cmd` mở thường rồi đóng/mở lại để kiểm dữ liệu vận hành bình thường. Không chạy thay user trong host hoặc suy private persistence thành live-state PASS. Windows/UAC là lượt riêng, vẫnNOT_RUN; không dùng resource đang chạy. CPU3lượtPASS được công nhận trong điều kiện đã đo, spike cũ giữ nguyên là chưa xác định nguyên nhân, không tiếp tục profiling hoặc kéo dài audit vì nhãnPARTIAL.
+
+# Bàn giao đợt sửa 1.0.3 — lịch sử trước docs1
 
 Năm finding đã sửa và kiểm lại trên artifact mới: scan không chồng nhau hoặc nhận kết quả cũ; Settings quản lý undo/snapshot sau History retention; summary gateCPU/frame/RAM và ghi sớm; HKCUshared không đọc trùng, snapshot cũ so sánh tương thích; size/allocated sort bằng bytes, unknown táchzero. GiữWPF/basic tiếng Việt và18phase. Chi tiết baseline trước sửa cùng regression ở [FIX-1.0.3.md](FIX-1.0.3.md).
 

@@ -1,4 +1,10 @@
-# Đợt sửa hiện tại 1.0.3 — kiểm artifact xong, nghiệm thu PARTIAL
+# 1.0.3 — chuyển sang ứng viên dùng thử, hoàn thiện gói docs1
+
+Theo quyết định mới của user: dừng vòng sửa lớn/audit toàn repo và không thêm profiling. Hoàn thiện hướng dẫn trong gói mới `NyanControlCenter-1.0.3-win-x64-docs1`, giữ ZIP cũ; không rebuild app, giữ source binary3dddf48 và SHA256 EXE cũ. Chỉ docs/config/launcher metadata đổi. `scripts/repackage-docs.ps1` kiểm cả payload, EXE/DLL, ZIP/manifest và giữ checksum gói cũ. Gói/đường mở đang kiểm trước push nhánh `nyan/control-center`; PR#1 giữdraft, khôngmerge.
+
+Quota được mô tả đúng100backup dùng chung +100snapshot riêng; bỏ bản sao khác hoàn tác Windows. Explorer/private-store hai phiên và Mo-Nyan/live-user-state là hai bài riêng, chờ user mở thật. Windows/UAC tiếp tụcNOT_RUN, không thử cấu hình đang dùng. CPU cũ là vấn đề chưa xác định nguyên nhân, không tự chặn dùng thử vô thời hạn; phép đo mới của launcher vẫn phải báoFAIL nếu vượtbudget. Các phần dưới là mốc lịch sử trước quyết định này.
+
+# Đợt sửa 1.0.3 — kiểm artifact xong, nghiệm thu PARTIAL
 
 Năm finding rõ nguyên nhân đã sửa; chi tiết ở `docs/FIX-1.0.3.md`. Giữ18phase/WPF/basic tiếng Việt, 100backup dùng chung các loại, 100snapshot riêng và budgetCPU1%. Verify cuối `.evidence/verify-500d1ec1770949aeb6d375fa63241b5d`:99PASS/0FAIL/0SKIP, PS5.1 report13PASS, WPF70PASS, build0warnings/errors. Windowsguard/helper whitelist giữ nguyên; Startup/quarantine không discard hoặc tự prune.
 
