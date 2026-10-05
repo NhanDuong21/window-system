@@ -26,7 +26,38 @@ Chốt trước số lượt: **1 baseline trace1.0.2, 3 lượt không profiler
 
 Baseline profile duy nhất `.evidence/cpu-baseline-trace-86c199118377479e8b49f82e1de1d353`: idle0.03906%, nativePASS, không tái hiện spike. SampleProfiler phần lớn External/idle waits; sample count là thread residency, không phải CPU milliseconds. Không quy nguyên nhân spike2.1–2.2% cho WPF/reader hoặc đổi timer. Collector local `.tools/diagnostics` chỉ công cụ phát triển, không dependency của app hay toolchain global. EventPipe mặc định có ProcessInfo descriptor; không đọc/xuất payload commandline/environment. Lượt mới dùng streaming filter chỉ lưu samples/frames/threads, không raw trace metadata.
 
-Kết quả artifact/series/profile cuối được ghi ở HANDOVER/STATE sau đóng gói. Profiled observations không cộng vào unprofiled budget gate. Nếu không tái hiện spike, kết luận vẫn là nguyên nhân chưa xác định; không nhận một seriesPASS là chứng minh mọi điều kiện ổn định.
+Profiled observations không cộng vào unprofiled budget gate. Không tái hiện spike thì kết luận vẫn là nguyên nhân chưa xác định; không nhận một seriesPASS là chứng minh mọi điều kiện ổn định.
+
+## Kết quả cuối — artifact 1.0.3
+
+Source `3dddf48ceec4c288ebcc309f9831f64c730ec5bd`; EXE/ZIP và toàn bộ 403 file đã kiểm hash. Exact hashes ở [HANDOVER.md](HANDOVER.md). Commit sau chỉ cập nhật tài liệu, không thay bản đã đo.
+
+`./scripts/verify.ps1`: **99 PASS / 0 FAIL / 0 SKIP**, report **13 PASS trên Windows PowerShell 5.1**, WPF **70 PASS**, build không có warning/error. Evidence: `.evidence/verify-500d1ec1770949aeb6d375fa63241b5d`. Chính artifact chạy lại WPF 70 PASS với SDK lookup bị vô hiệu; 3 lượt native read/private persistence/user/performance đều PASS. Evidence: `.evidence/performance-series-ab559c34fb4546fc8abbfaf604840bad`.
+
+| Lượt không profiler | Khung hình đầu | CPU idle | Working set |
+|---|---:|---:|---:|
+| 1 | 981 ms | 0% | 146,37 MiB |
+| 2 | 695 ms | 0,013019% | 138,28 MiB |
+| 3 | 774 ms | 0% | 147,48 MiB |
+
+Cả 3 lượt: Cài đặt, foreground và visible, scaling 125%, không có tác vụ active ở đầu/cuối, 12 CPU logic, settle 5 giây rồi đo 10 giây. Ngưỡng giữ nguyên: 2.500 ms / 1% / 350 MiB. Giá trị CPU 0 phản ánh độ phân giải counter; không chứng minh tuyệt đối không có CPU work. Số lượt đã ghi trong plan trước khi chạy, giữ cả ba kết quả.
+
+Lượt profile riêng duy nhất trên 1.0.3: `.evidence/cpu-artifact3-stream-c3dd2b4318014038bfead303507d3e3f`, collector exit 0, native PASS; 46,875 ms process CPU trong 9.999,6089 ms, chuẩn hóa 12 CPU = 0,039064%. Thread 20944 ghi 46,875 ms; chỉ có hai managed samples trên thread này, ở WPF automation/Dispatcher. Đây là quan sát nhỏ trong một lượt không tái hiện spike, chưa đủ phân bổ chi phí theo hàm hoặc quy nguyên nhân. 32.498 state samples chủ yếu External không phải số mẫu đang dùng CPU. Native/unresolved frames còn giới hạn; baseline 1.0.2 chỉ có window ước tính. Không xuất ProcessInfo payload, command line hoặc environment; thư viện có thể xử lý metadata nội bộ trong RAM, raw trace/ETLX mới không được lưu.
+
+Output nghiệm thu cho scope đã chạy:
+
+```text
+Đợt sửa 5 finding: ĐẠT kiểm tra hồi quy
+Đọc dữ liệu Windows: ĐẠT (3/3 lượt)
+Lưu dữ liệu ứng dụng riêng: ĐẠT (3/3 lượt)
+Hiệu năng bản 1.0.3 ở điều kiện đã ghi: ĐẠT (3/3 lượt)
+Nguyên nhân CPU fail cũ: CHƯA XÁC ĐỊNH — evidence fail giữ nguyên
+Mở lại/theme ngoài host và live state: CHƯA HOÀN TẤT
+Thao tác Windows/UAC: CHƯA CHẠY
+Kết luận toàn bộ: PARTIAL
+```
+
+Kho vẫn gồm 100 backup dùng chung các loại và 100 snapshot riêng. Chỉ environment undo/snapshot được discard; không hứa mọi kho đầy đều có mục được phép bỏ. Hướng dẫn source đã cập nhật sang 1.0.3; bản hướng dẫn riêng `artifacts/HUONG-DAN-1.0.3.md` đi cùng artifact, giữ ZIP/hash cũ nguyên vẹn. `HUONG-DAN.md` trong ZIP còn nhắc đường dẫn 1.0.2 theo bản tài liệu tại lúc đóng gói.
 
 ## Giới hạn còn lại
 

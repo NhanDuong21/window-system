@@ -1,6 +1,14 @@
-# Đợt sửa hiện tại 1.0.3 — chờ kiểm artifact
+# Đợt sửa hiện tại 1.0.3 — kiểm artifact xong, nghiệm thu PARTIAL
 
-Năm finding rõ nguyên nhân đã triển khai; chi tiết ở `docs/FIX-1.0.3.md`. Giữ18phase/WPF/basic tiếng Việt, quota100 và budgetCPU1%. Test tích hợp99PASS, PS5.1 report13PASS, WPF70PASS; final source verification/package đang hoàn tất. Dữ liệu/quarantine/Startup không tự prune; Windowsguard/helper whitelist giữ nguyên. Baseline trace1.0.2 không tái hiện spike; plan3unprofiled+1profile1.0.3 cố định trước đo. Chưa gọi CPU đã giải quyết hoặc toàn bộ nghiệm thu PASS. Explorer/productionWindows/UAC vẫn chưa đủ bằng chứng. Chỉ fixtures/appfiles/read-only; PR#1 draft, không merge.
+Năm finding rõ nguyên nhân đã sửa; chi tiết ở `docs/FIX-1.0.3.md`. Giữ18phase/WPF/basic tiếng Việt, 100backup dùng chung các loại, 100snapshot riêng và budgetCPU1%. Verify cuối `.evidence/verify-500d1ec1770949aeb6d375fa63241b5d`:99PASS/0FAIL/0SKIP, PS5.1 report13PASS, WPF70PASS, build0warnings/errors. Windowsguard/helper whitelist giữ nguyên; Startup/quarantine không discard hoặc tự prune.
+
+Artifact1.0.3 từ source **3dddf48ceec4c288ebcc309f9831f64c730ec5bd**; cả403manifesthashes được kiểm. EXE SHA256 `35796B6AC77E6B2538F6DE68967B5CB5B42954A5FA526CE5FDA186FFD5C4BE09`; ZIP `5B919134A4E6547B3B64F81959F24A644FD96A80761A72011C09E13ADBF5FB58`. Source/docs commit sau không thay executable hoặc ZIP đã đo.
+
+Plan chốt trước đo:1baselineprofile1.0.2 +3unprofiled1.0.3 +1profile1.0.3. Series `.evidence/performance-series-ab559c34fb4546fc8abbfaf604840bad`:3/3 native/privatepersistence/user/performancePASS; artifactWPF70/self-contained invalidSDKrootPASS. Lượt1:981ms/CPU0%/146.37MiB; lượt2:695ms/CPU0.013019%/138.28MiB; lượt3:774ms/CPU0%/147.48MiB. Đều Settings foreground/visible, DPI125%, taskfalse, settle5s/sample10s,12CPUlogic; CPU0 là độ phân giải counter, không khẳng định tuyệt đối không dùngCPU. Riêng summary nghiệm thu vẫnPARTIAL vì Explorer/UI/Windows/UAC chưa đủ.
+
+Profile1.0.3 duy nhất `.evidence/cpu-artifact3-stream-c3dd2b4318014038bfead303507d3e3f`:nativePASS/collector0, CPU0.039064% (46.875ms);2managedsamples của threadCPU liên quan WPFautomation/Dispatcher, không đủ để quy nguyên nhân spike cũ. Không rawtrace/ETLX mới hoặc exportProcessInfo payload. Baselineprofile cũng không tái hiện spike. **CPU2.1215%/2.2257% cũ vẫnFAIL, nguyên nhân chưa xác định**; DPI100% cũ khác125% mới. Không retry hoặc đổibudget để đạt.
+
+Explorer1.0.2 đã có firstsessionclose nhưng thiếu reopen/human summary; các mô tả cửa sổ đầu còn mở dưới đây là lịch sử tại thời điểm đọc cũ. Explorer1.0.3, live-user-state và productionWindows/UAC vẫnWAITING_FOR_USER/NOT_RUN. Chỉfixtures/appfiles/read-only, không sửa Windows thật. Hướng dẫn mới ởOPERATIONS và sidecar `artifacts/HUONG-DAN-1.0.3.md`; guide bên trong ZIP giữ nguyên bản đóng gói. PR#1 giữdraft, khôngmerge; hai commit phiên nàylocal, chưapush.
 
 # Baseline 1.0.2 — sửa lỗi PS5.1 BOM
 

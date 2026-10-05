@@ -1,6 +1,28 @@
-# Đợt sửa 1.0.3 — source triển khai, artifact đang kiểm
+# Bàn giao đợt sửa 1.0.3 — PARTIAL
 
-Theo quyết định của user: sửa năm finding và điều tra CPU riêng; không làm lại app, không bắt đầu lại18phase. Chi tiết implementation, baseline regressions, compatibility và plan cố định ở [FIX-1.0.3.md](FIX-1.0.3.md). Source giữ WPF/basic tiếng Việt. Safe suite99PASS, PS5.1 report13PASS, WPF70PASS; source cuối và artifact sẽ ghi sau packaging. Windows/UAC thật NOT_RUN, Explorer vẫn chờ user, spikeCPU cũ chưa giải thích. Không dùng test count để đóng các gap này.
+Năm finding đã sửa và kiểm lại trên artifact mới: scan không chồng nhau hoặc nhận kết quả cũ; Settings quản lý undo/snapshot sau History retention; summary gateCPU/frame/RAM và ghi sớm; HKCUshared không đọc trùng, snapshot cũ so sánh tương thích; size/allocated sort bằng bytes, unknown táchzero. GiữWPF/basic tiếng Việt và18phase. Chi tiết baseline trước sửa cùng regression ở [FIX-1.0.3.md](FIX-1.0.3.md).
+
+Source artifact **3dddf48ceec4c288ebcc309f9831f64c730ec5bd**; folder `artifacts/NyanControlCenter-1.0.3-win-x64`, ZIP cùng tên, self-contained/unsigned. EXE SHA256 `35796B6AC77E6B2538F6DE68967B5CB5B42954A5FA526CE5FDA186FFD5C4BE09`; ZIP `5B919134A4E6547B3B64F81959F24A644FD96A80761A72011C09E13ADBF5FB58`. Đã kiểm toàn bộ403manifesthashes; giữartifact/evidence1.0.0–1.0.2. Commit sau chỉdocs, không thay các file đã đo. `HUONG-DAN.md` trong ZIP là bản đóng băng theo source3dddf48, còn nhắc đường dẫn1.0.2; hướng dẫn đúng1.0.3 được cung cấp riêng tại `artifacts/HUONG-DAN-1.0.3.md` và [OPERATIONS.md](OPERATIONS.md).
+
+Verify cuối `.evidence/verify-500d1ec1770949aeb6d375fa63241b5d`:**99PASS/0FAIL/0SKIP**, PowerShell5.1 report**13PASS**, WPF**70PASS**, Release build0warnings/errors. WPF kiểm controls/fixtures, không thay Explorer hoặc live-user-state. Artifact thật chạy lạiWPF70 với DOTNET_ROOT/X64/X86 không hợp lệ và RollForwardDisable, chứng minh không cầnSDKlookup.
+
+Ba lượt unprofiled đã đặt số lượt trước trong `plan.json`, không retry; tất cảnative read/privatepersistence/user/performancePASS. Evidence `.evidence/performance-series-ab559c34fb4546fc8abbfaf604840bad`:
+
+| Lượt | First ContentRendered | CPU idle | Working set |
+|---|---:|---:|---:|
+| 1 | 981ms | 0% | 146.37MiB |
+| 2 | 695ms | 0.013019% | 138.28MiB |
+| 3 | 774ms | 0% | 147.48MiB |
+
+Điều kiện cả3:Settings foreground/visible đầu/cuối, DPI125%, taskfalse đầu/cuối, settle5s/sample10s,12CPUlogic. Budget vẫn2500ms/1%/350MiB. CPU0 phản ánh counter không tăng ở độ phân giải đo, không phải chứng minh không có CPUwork. Automatic acceptance-summary vẫn**PARTIAL** vì UI/human/Windows/UAC chưa chạy đầy đủ; seriesPASS chỉ nói về scope tự động trên.
+
+Một baselineprofile1.0.2 và một profile1.0.3 đã chạy riêng, không cộng vào3lượt budgetgate. Profile mới `.evidence/cpu-artifact3-stream-c3dd2b4318014038bfead303507d3e3f`:nativePASS/collector0, firstframe865ms/working149.90MiB/CPU0.039064%; CPUprocess46.875ms trong9999.6089ms. Thread20944 ghi46.875ms; chỉ2managedsamples ở WPFautomation/Dispatcher, chưa đủ quy chi phí từng hàm hoặc giải thích spike. Tổng32498state samples chủ yếuExternal là trạng thái/residency, không phải32498CPU samples. NativeCPU và frame đãJIT không được giải mã đầy đủ. Collector mới chỉ lưu JSONCPU/thread/frame, không rawtrace/ETLX hoặc exportProcessInfo payload; collector/tool chỉignored development.
+
+**SpikeCPU2.1215%/2.2257% của1.0.2 vẫnFAIL và nguyên nhân chưa xác định.** Profile hai bản đều không tái hiện spike; không có evidence để sửa timer hoặc đổi stack. DPI100% trong evidenceFAIL cũ khác125% mới, không suy3PASS chứng minh ổn định mọi điều kiện.
+
+Quota giữ **100backup dùng chung các loại +100snapshot riêng**. Environment undo/snapshot có thể bỏ sau previewTTL/xác nhận/fingerprintrecheck. Startup chỉUndo, quarantine giữ để phục hồi thủ công; không hứa mọi kho đầy đều có mục được phép discard. Snapshot alias chỉhashed, canonical64ID/undo cũ giữ; không gộp theo tên.
+
+Explorer1.0.2 đã đóng phiên đầu, vẫn thiếu mở lại/checklist/summary; các câu cửa sổ đầu còn mở và tiếp tục phiên đầu dưới đây là lịch sử. Explorer1.0.3/live-user-state và Windows mutation/UAC còn**WAITING_FOR_USER/NOT_RUN**. Nếu nghiệm thu tiếp, mở `Nghiem-Thu-Nyan.cmd` từ Explorer và kiểmRelease1.0.3; Enter ởmenu cuối kết thúc chỉđọc. Không chạy startup/PATH/service/temp đang dùng để lấp matrix. Chỉapp/files sở hữu/read-only được dùng trong đợt này; Windowsguard/helper whitelist nguyênvẹn. PR#1 còndraft, khôngmerge; các commit phiên nàylocal/chưapush.
 
 # Baseline nghiệm thu — Nyan Control Center 1.0.2
 
