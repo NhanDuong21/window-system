@@ -1,6 +1,10 @@
-# 1.0.3 — chuyển sang ứng viên dùng thử, hoàn thiện gói docs1
+# 1.0.3-docs1 — ứng viên dùng thử, phần còn lại do user nghiệm thu
 
-Theo quyết định mới của user: dừng vòng sửa lớn/audit toàn repo và không thêm profiling. Hoàn thiện hướng dẫn trong gói mới `NyanControlCenter-1.0.3-win-x64-docs1`, giữ ZIP cũ; không rebuild app, giữ source binary3dddf48 và SHA256 EXE cũ. Chỉ docs/config/launcher metadata đổi. `scripts/repackage-docs.ps1` kiểm cả payload, EXE/DLL, ZIP/manifest và giữ checksum gói cũ. Gói/đường mở đang kiểm trước push nhánh `nyan/control-center`; PR#1 giữdraft, khôngmerge.
+Theo quyết định mới của user: dừng vòng sửa lớn/audit toàn repo và không thêm profiling. Gói mới `NyanControlCenter-1.0.3-win-x64-docs1` có hướng dẫn đúng trong ZIP, không rebuild app. Binary source **3dddf48ceec4c288ebcc309f9831f64c730ec5bd**; documentation commit **df516b07fcabc3ec8d1a6178225d445163904808**. EXE SHA256 không đổi `35796B6AC77E6B2538F6DE68967B5CB5B42954A5FA526CE5FDA186FFD5C4BE09`; ZIP mới **`B3A3EBAD86847B5AB621B0067AB17BD96BCA6A2CAA583B2488691926D628530E`**, ZIP cũ giữ nguyên.
+
+Package proof `.evidence/repackage-docs-191b775d581c4c7ea587450c0b837129`:403payload/404ZIPentry PASS, chỉguide thay đổi,398EXE/DLL và toàn bộ runtime/config khác giữ hash. Artifact docs1 WPF70/self-contained PASS `.evidence/docs1-artifact-ui-be38348f31c448c390d353686012fd50`; PS5.1 syntax/report13/identity và launcher path preflight PASS `.evidence/docs1-preflight-d41cb3a7ddfa4b8f97b6fb711f1074a6`. Không coi dry-run đường mở là Explorer/live-state PASS. Ba lượt performance cũ áp dụng cho chính binary giữ nguyên, không đo lại.
+
+Chỉ source/docs/config/scripts đưa lên nhánh review `nyan/control-center` sau staged diff check; PR#1 draft, không merge/main/force-push. Artifacts/evidence/runtime/database không tracked hoặc push. HANDOVER ghi checksum/metadata và hai bài user còn lại. Các câu chưapush dưới đây là mốc lịch sử.
 
 Quota được mô tả đúng100backup dùng chung +100snapshot riêng; bỏ bản sao khác hoàn tác Windows. Explorer/private-store hai phiên và Mo-Nyan/live-user-state là hai bài riêng, chờ user mở thật. Windows/UAC tiếp tụcNOT_RUN, không thử cấu hình đang dùng. CPU cũ là vấn đề chưa xác định nguyên nhân, không tự chặn dùng thử vô thời hạn; phép đo mới của launcher vẫn phải báoFAIL nếu vượtbudget. Các phần dưới là mốc lịch sử trước quyết định này.
 

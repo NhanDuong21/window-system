@@ -1,8 +1,21 @@
-# 1.0.3-docs1 — chuẩn bị nghiệm thu sử dụng
+# 1.0.3-docs1 — ứng viên nghiệm thu sử dụng
 
-Dừng vòng sửa lớn theo yêu cầu user. Gói `NyanControlCenter-1.0.3-win-x64-docs1` hoàn thiện hướng dẫn ngay trong ZIP, giữ nguyên binary/source3dddf48 và ZIP cũ. Đây là revision tài liệu của release1.0.3, không phải bản build mới. Manifest tách `binarySourceCommit` và `documentationCommit`, ghi `packageId`; launcher/summary giữ định danh này khi nghiệm thu. Kết quả kiểm gói và push sẽ ghi tại đây sau hoàn tất.
+Dừng vòng sửa lớn theo yêu cầu user. Gói hiện hành là `artifacts/NyanControlCenter-1.0.3-win-x64-docs1` và ZIP cùng tên. Hướng dẫn đúng bản 1.0.3 nằm ngay trong ZIP; không cần sidecar. Giữ nguyên binary/source **3dddf48ceec4c288ebcc309f9831f64c730ec5bd**, không restore/publish/build lại. Documentation commit **df516b07fcabc3ec8d1a6178225d445163904808**. Manifest tách hai nguồn này, ghi packageId/builtAt gốc/packagedAt mới; launcher và summary ghi packageId để phân biệt với ZIP cũ.
 
-[OPERATIONS.md](OPERATIONS.md) phân biệt bỏ bản sao với hoàn tác Startup, quota dùng chung và mục được bảo vệ. Hai bài tiếp theo: `Nghiem-Thu-Nyan.cmd` mở từ Explorer để kiểm vùng thử/hai phiên UI; `Mo-Nyan.cmd` mở thường rồi đóng/mở lại để kiểm dữ liệu vận hành bình thường. Không chạy thay user trong host hoặc suy private persistence thành live-state PASS. Windows/UAC là lượt riêng, vẫnNOT_RUN; không dùng resource đang chạy. CPU3lượtPASS được công nhận trong điều kiện đã đo, spike cũ giữ nguyên là chưa xác định nguyên nhân, không tiếp tục profiling hoặc kéo dài audit vì nhãnPARTIAL.
+EXE SHA256 không đổi: `35796B6AC77E6B2538F6DE68967B5CB5B42954A5FA526CE5FDA186FFD5C4BE09`. ZIP docs1 SHA256: **`B3A3EBAD86847B5AB621B0067AB17BD96BCA6A2CAA583B2488691926D628530E`**. ZIP cũ giữ nguyên `5B919134A4E6547B3B64F81959F24A644FD96A80761A72011C09E13ADBF5FB58`.
+
+Đã kiểm **403 file payload và 404 entry ZIP**; chỉ HUONG-DAN.md thay đổi trong payload, tất cả **398 EXE/DLL byte-identical**, các file runtime/config khác cũng giữ hash. Manifest là file metadata mới. Evidence `.evidence/repackage-docs-191b775d581c4c7ea587450c0b837129` giữ kết quả cùng từng cặp hash. Vì binary không đổi, tiếp tục tham chiếu safe99/WPF70 và ba lượt native/performance của bản1.0.3 bên dưới; không chạy thêm chuỗi đo/profiling.
+
+Chính EXE ở folder docs1 đã chạy **WPF70 PASS** với DOTNET_ROOT variants không hợp lệ/RollForwardDisable: `.evidence/docs1-artifact-ui-be38348f31c448c390d353686012fd50`. Windows PowerShell5.1 syntax/report**13 PASS**, identity roundtrip PASS; Mo-Nyan dry-run gọi đúng EXE/folder mới, acceptance manifest preflight403 PASS: `.evidence/docs1-preflight-d41cb3a7ddfa4b8f97b6fb711f1074a6`. Dry-run chỉ kiểm resolution, không tính là đã dùng Explorer hoặc live app data.
+
+Staged diff/source đã review trước commit; chỉ source/docs/config/scripts được đưa lên nhánh review `nyan/control-center`. Artifacts, database, runtime và evidence giữ ignored/local. [PR#1](https://github.com/NhanDuong21/window-system/pull/1) giữ draft, không merge/main/force-push. Các câu chưa push trong mốc lịch sử bên dưới thuộc lượt trước.
+
+[OPERATIONS.md](OPERATIONS.md) phân biệt bỏ bản sao với hoàn tác Startup, quota dùng chung và mục được bảo vệ. Hai bài tiếp theo do user thực hiện từ Explorer:
+
+1. **Nghiem-Thu-Nyan.cmd**: kiểm Release1.0.3/Package docs1, gõ EXPLORER đúng thực tế; đổi theme và thử UI, đóng cả hai phiên, nhập OK hoặc lỗi; Enter ở menu tùy chọn để kết thúc chỉ đọc. Gửi acceptance-summary.json để đánh giá từng phần.
+2. **Mo-Nyan.cmd**: mở quyền thường, đổi theme, xem vài màn và Dữ liệu/bản hoàn tác, đóng rồi mở lại; ghi app có nhớ lựa chọn không. Đây là vùng dữ liệu vận hành bình thường, riêng với private store của bài1; không cần tạo100mục thật.
+
+Explorer/live-user-state còn WAITING_FOR_USER; không chạy thay user trong host hoặc suy private persistence thành live-state PASS. Windows/UAC là lượt riêng, vẫn NOT_RUN; không dùng resource đang chạy. CPU ba lượt PASS được công nhận trong điều kiện đã đo, spike cũ giữ nguyên là chưa xác định nguyên nhân, không tự chặn dùng thử vô thời hạn hoặc kéo dài audit vì nhãn PARTIAL. Nếu gặp lại CPU cao, giữ evidence đúng tình huống; launcher vẫn báo FAIL khi vượt budget1%.
 
 # Bàn giao đợt sửa 1.0.3 — lịch sử trước docs1
 
