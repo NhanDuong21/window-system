@@ -36,10 +36,12 @@ public sealed class MainWindow : Window
     private readonly List<Button> _actionButtons = new();
     private CancellationTokenSource? _readCts;
     private CancellationTokenSource? _taskCts;
+    private CancellationTokenSource? _scanCts;
     private ModuleResult? _result;
     private Module _module;
     private bool _dark, _closing, _loading, _taskRunning, _updatingFilter;
     private int _generation;
+    private long _nextScanId, _activeScanId;
     private string? _sortKey, _filterKey, _baseRoot, _currentRoot;
     private ListSortDirection _sortDirection;
 
@@ -89,8 +91,8 @@ public sealed class MainWindow : Window
         _table.Sorting += SortTable;
         _table.MouseDoubleClick += async (_, _) =>
         {
-            if (_module == Module.Storage && SelectedRow is { } row && IsDirectory(row))
-                await ScanFolderAsync(Meta(row, "path"));
+            if (!_loading && !_taskRunning && !_closing && _module == Module.Storage && SelectedRow is { } row && IsDirectory(row))
+                await RunUiAsync(() => ScanFolderAsync(Meta(row, "path")));
         };
         _cancelButton.Click += (_, _) => CancelWork();
         _themeButton.Click += async (_, _) => await ChangeThemeAsync();
@@ -225,6 +227,7 @@ public sealed class MainWindow : Window
             case Module.Cleanup: Action("Preview file đã chọn…", CleanupAsync, true); break;
             case Module.History: Action("Hoàn tác dòng đã chọn…", UndoAsync); break;
             case Module.Settings:
+                Action("Dữ liệu và bản hoàn tác…", ManageStoredDataAsync);
                 Action("Backup dữ liệu app…", BackupAsync); Action("Khôi phục dữ liệu app…", RestoreAsync, true); break;
         }
         _actions.Children.Add(_cancelButton);
@@ -236,7 +239,7 @@ public sealed class MainWindow : Window
     public async Task NavigateForTestAsync(Module module)
     {
         if (_closing) return;
-        CancelWork(); _taskRunning = false; _generation++; _module = module; _result = null;
+        CancelWork(); _scanCts = null; _activeScanId = 0; _taskRunning = false; _generation++; _module = module; _result = null;
         _title.Text = Pages[module].Title; _description.Text = Pages[module].Description;
         _search.Text = ""; _sortKey = null; _details.Text = ""; _table.ItemsSource = null; _table.Columns.Clear();
         _updatingFilter = true; _filter.Items.Clear(); _filter.Items.Add("Tất cả"); _filter.SelectedIndex = 0; _updatingFilter = false;
@@ -259,8 +262,8 @@ public sealed class MainWindow : Window
             if (!_closing && generation == _generation && !cts.IsCancellationRequested)
                 ShowResult(result);
         }
-        catch (OperationCanceledException) { if (generation == _generation && !_closing) SetStatus("Đã hủy tải dữ liệu. Dùng Làm mới để thử lại."); }
-        catch (Exception ex) { if (generation == _generation && !_closing) ShowError(ex); }
+        catch (OperationCanceledException) { if (generation == _generation && !_closing && ReferenceEquals(_readCts, cts)) SetStatus("Đã hủy tải dữ liệu. Dùng Làm mới để thử lại."); }
+        catch (Exception ex) { if (generation == _generation && !_closing && ReferenceEquals(_readCts, cts)) ShowError(ex); }
         finally
         {
             if (ReferenceEquals(_readCts, cts)) { _loading = false; UpdateBusy(); }
@@ -320,9 +323,21 @@ public sealed class MainWindow : Window
         if (text.Length > 0) rows = rows.Where(x => x.Cells.Values.Any(v => v.Contains(text, StringComparison.CurrentCultureIgnoreCase)));
         if (_filterKey is not null && filter is not null && filter != "Tất cả") rows = rows.Where(x => Cell(x, _filterKey) == filter);
         if (_sortKey is not null)
-            rows = _sortDirection == ListSortDirection.Ascending ? rows.OrderBy(x => Cell(x, _sortKey), CellComparer.Instance) : rows.OrderByDescending(x => Cell(x, _sortKey), CellComparer.Instance);
+        {
+            if (_module == Module.Storage && _sortKey is "size" or "allocated")
+            {
+                // Unknown allocation is distinct from zero and stays last in either direction.
+                var knownFirst = rows.OrderBy(x => StorageNumber(x, _sortKey).HasValue ? 0 : 1);
+                rows = _sortDirection == ListSortDirection.Ascending
+                    ? knownFirst.ThenBy(x => StorageNumber(x, _sortKey))
+                    : knownFirst.ThenByDescending(x => StorageNumber(x, _sortKey));
+            }
+            else rows = _sortDirection == ListSortDirection.Ascending ? rows.OrderBy(x => Cell(x, _sortKey), CellComparer.Instance) : rows.OrderByDescending(x => Cell(x, _sortKey), CellComparer.Instance);
+        }
         _table.ItemsSource = rows.ToList(); UpdateSelection();
     }
+
+    private static long? StorageNumber(Row row, string key) => long.TryParse(Meta(row, key == "size" ? "length" : "allocatedBytes"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var value) && value >= 0 ? value : null;
 
     private void SortTable(object sender, DataGridSortingEventArgs e)
     {
@@ -370,7 +385,7 @@ public sealed class MainWindow : Window
         foreach (var button in _actionButtons) button.IsEnabled = !_loading && !_taskRunning;
         _reveal.IsEnabled = !_loading && !_taskRunning;
     }
-    private void CancelWork() { _readCts?.Cancel(); _taskCts?.Cancel(); }
+    private void CancelWork() { _readCts?.Cancel(); _taskCts?.Cancel(); _scanCts?.Cancel(); }
     private async Task RunUiAsync(Func<Task> action)
     { try { await action(); } catch (OperationCanceledException) { SetStatus("Đã hủy tác vụ."); } catch (Exception ex) { ShowError(ex); } }
 
@@ -387,23 +402,26 @@ public sealed class MainWindow : Window
         await PreviewAndExecuteAsync(new ActionRequest(kind, target, values));
     }
 
-    private async Task PreviewAndExecuteAsync(ActionRequest request)
+    private async Task<ActionOutcome?> PreviewAndExecuteAsync(ActionRequest request, Window? owner = null, CancellationToken cancellationToken = default)
     {
-        _taskRunning = true; _taskCts?.Dispose(); _taskCts = new CancellationTokenSource(TimeSpan.FromMinutes(3)); UpdateBusy();
+        _taskRunning = true; _taskCts?.Dispose(); _taskCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken); _taskCts.CancelAfter(TimeSpan.FromMinutes(3)); UpdateBusy();
         var token = _taskCts.Token;
         try
         {
             SetStatus("Đang kiểm tra đối tượng và tạo preview…");
             var preview = await _app.PreviewAsync(request, token);
-            var dialog = new PreviewDialog(preview, _dark) { Owner = this };
+            token.ThrowIfCancellationRequested();
+            var dialog = new PreviewDialog(preview, _dark) { Owner = owner ?? this };
+            if (_fixtureMode) dialog.Loaded += (_, _) => PreviewOpenedForTest?.Invoke(dialog);
             if (dialog.ShowDialog() != true)
-            { SetStatus("Đã hủy preview. Chưa gửi yêu cầu thực thi."); return; }
+            { SetStatus("Đã hủy preview. Chưa gửi yêu cầu thực thi."); return null; }
             token.ThrowIfCancellationRequested();
             SetStatus("Đang thực thi và kiểm tra lại kết quả…");
             var outcome = await _app.ExecuteAsync(preview.Token, token);
             SetStatus($"{outcome.Status}: {outcome.Message}\nThành công: {outcome.Succeeded:N0} · Không hoàn thành: {outcome.Failed:N0}");
             _taskRunning = false; await RefreshForTestAsync();
             SetStatus($"{outcome.Status}: {outcome.Message}\nThành công: {outcome.Succeeded:N0} · Không hoàn thành: {outcome.Failed:N0} · {DateTime.Now:HH:mm:ss}");
+            return outcome;
         }
         finally { _taskRunning = false; UpdateBusy(); }
     }
@@ -445,16 +463,20 @@ public sealed class MainWindow : Window
     }
     private async Task ScanFolderAsync(string root)
     {
+        if (_closing || _taskRunning) return;
         if (string.IsNullOrWhiteSpace(root)) { SetStatus("Thư mục không có đường dẫn được phép đọc."); return; }
         if (!IsWithinBase(root)) { SetStatus("Thư mục nằm ngoài phạm vi gốc đã chọn."); return; }
-        _readCts?.Cancel(); _taskCts?.Dispose(); _taskCts = new CancellationTokenSource();
+        _readCts?.Cancel(); _readCts?.Dispose(); _readCts = null; _loading = false;
+        var cts = new CancellationTokenSource(); _scanCts = cts;
+        var scanId = ++_nextScanId; _activeScanId = scanId;
         _taskRunning = true; UpdateBusy(); var generation = _generation;
+        bool CurrentScan() => !_closing && generation == _generation && scanId == _activeScanId && ReferenceEquals(_scanCts, cts);
         try
         {
             SetStatus("Đang quét thư mục…");
-            var progress = new Progress<ScanProgress>(p => { if (!_closing && generation == _generation) SetStatus($"Đang quét · {p.Files:N0} file · {FormatBytes(p.Bytes)} · Bỏ qua: {p.Skipped:N0}\n{p.Status}"); });
-            var report = await _app.ScanAsync(root, progress, _taskCts.Token);
-            if (!_closing && generation == _generation)
+            var progress = new Progress<ScanProgress>(p => { if (CurrentScan()) SetStatus($"Đang quét · {p.Files:N0} file · {FormatBytes(p.Bytes)} · Bỏ qua: {p.Skipped:N0}\n{p.Status}"); });
+            var report = await _app.ScanAsync(root, progress, cts.Token);
+            if (CurrentScan())
             {
                 _currentRoot = root;
                 var columns = new List<Column> { new("name", "Tên"), new("type", "Loại"), new("size", "Kích thước logic"), new("allocated", "Chiếm đĩa"), new("path", "Đường dẫn") };
@@ -463,7 +485,13 @@ public sealed class MainWindow : Window
                     $"{report.Files:N0} file · {FormatBytes(report.Bytes)} logic · Chiếm đĩa: {(report.AllocatedBytes is { } allocated ? FormatBytes(allocated) : "chưa đọc được")} · Bỏ qua: {report.Skipped:N0}" + (report.Cancelled ? " · Đã hủy, giữ kết quả một phần" : ""), report.CompletedAt));
             }
         }
-        finally { if (generation == _generation) { _taskRunning = false; UpdateBusy(); } }
+        catch (OperationCanceledException) { if (CurrentScan()) SetStatus("Đã hủy quét thư mục. Dùng Làm mới để thử lại."); }
+        catch (Exception ex) { if (CurrentScan()) ShowError(ex); }
+        finally
+        {
+            if (CurrentScan()) { _scanCts = null; _activeScanId = 0; _taskRunning = false; UpdateBusy(); }
+            cts.Dispose();
+        }
     }
     private static string FormatBytes(long bytes) => bytes >= 1L << 30 ? $"{bytes / (double)(1L << 30):N2} GiB" : bytes >= 1 << 20 ? $"{bytes / (double)(1 << 20):N2} MiB" : $"{bytes:N0} byte";
 
@@ -554,6 +582,23 @@ public sealed class MainWindow : Window
         if (!Confirm("Khôi phục dữ liệu ứng dụng", "Dữ liệu Nyan hiện tại sẽ được thay bằng backup sau khi validate. Thao tác này không khôi phục cấu hình Windows. Bạn cần xác nhận riêng trước khi tiếp tục.")) return;
         await AppTaskAsync(async token => { await _app.RestoreAsync(file.FileName, token); _dark = _app.Settings.Dark; Theme.Apply(this, _dark); _themeButton.Content = _dark ? "Giao diện sáng" : "Giao diện tối"; }, "Đang validate và khôi phục…", "Đã khôi phục dữ liệu Nyan.");
     }
+    private Task ManageStoredDataAsync() => OpenStoredDataCoreAsync(null);
+    private async Task OpenStoredDataCoreAsync(Action<StoredDataDialog>? test)
+    {
+        StoredDataInventory? inventory = null;
+        await AppTaskAsync(async token => inventory = await _app.GetStoredDataAsync(token), "Đang đọc dữ liệu Nyan đã lưu…", "Đã đọc dữ liệu và bản hoàn tác.", false);
+        if (_closing || inventory is null) return;
+        StoredDataDialog? dialog = null;
+        dialog = new StoredDataDialog(inventory, _dark, async (item, kind, token) =>
+        {
+            var outcome = await PreviewAndExecuteAsync(new ActionRequest(kind, item.Id), dialog, token);
+            var updated = await _app.GetStoredDataAsync(token);
+            var status = outcome?.Status switch { "success" => "Thành công", "failed" => "Thất bại", "partial" => "Một phần", "cancelled" => "Đã hủy", _ => "Kết quả" };
+            return (updated, outcome is null ? "Đã hủy preview. Chưa gửi yêu cầu thực thi." : status + ": " + outcome.Message);
+        }) { Owner = this };
+        if (_fixtureMode) dialog.Loaded += (_, _) => test?.Invoke(dialog);
+        dialog.ShowDialog();
+    }
     private async Task AppTaskAsync(Func<CancellationToken, Task> action, string loading, string done, bool refresh = true)
     {
         _taskCts?.Dispose(); _taskCts = new CancellationTokenSource(TimeSpan.FromMinutes(3)); _taskRunning = true; UpdateBusy();
@@ -639,12 +684,122 @@ public sealed class MainWindow : Window
     internal bool PersistedDarkForTest => _app.Settings.Dark;
     internal bool FixtureModeForTest => _fixtureMode;
     internal string? CurrentRootForTest => _currentRoot;
+    internal bool TaskRunningForTest => _taskRunning;
+    internal string[] VisibleIdsForTest => _table.Items.Cast<Row>().Select(row => row.Id).ToArray();
     internal void CancelForTest() => CancelWork();
     internal Task PaletteForTestAsync(Action<Window, TextBox, ListBox> test) => OpenPaletteCoreAsync(test);
+    internal Task StoredDataForTestAsync(Action<StoredDataDialog> test) => OpenStoredDataCoreAsync(test);
+    internal Action<PreviewDialog>? PreviewOpenedForTest { get; set; }
     internal async Task SetRevealForTestAsync(bool reveal) { _reveal.IsChecked = reveal; await Dispatcher.InvokeAsync(() => { }, DispatcherPriority.ApplicationIdle); }
     internal bool CachedContainsForTest(string value) => _cache.Values.SelectMany(x => x.Rows).Any(row => row.Cells.Values.Any(cell => cell.Contains(value, StringComparison.Ordinal)));
     internal async Task DrillDownForTestAsync() { _table.SelectedItem = _table.Items.Cast<Row>().FirstOrDefault(row => IsDirectory(row) && !Meta(row, "path").Equals(_currentRoot, StringComparison.OrdinalIgnoreCase)); await DrillDownAsync(); }
     internal async Task ScanForTestAsync(string root) { _baseRoot = root; await ScanFolderAsync(root); }
+    internal void DoubleClickDirectoryForTest(string id)
+    {
+        _table.SelectedItem = _table.Items.Cast<Row>().FirstOrDefault(row => row.Id == id);
+        _table.RaiseEvent(new MouseButtonEventArgs(Mouse.PrimaryDevice, 0, MouseButton.Left) { RoutedEvent = Control.MouseDoubleClickEvent });
+    }
+    internal void SortForTest(string key, ListSortDirection direction)
+    {
+        var column = _table.Columns.First(column => column.SortMemberPath == key);
+        column.SortDirection = direction == ListSortDirection.Ascending ? null : ListSortDirection.Ascending;
+        SortTable(_table, new DataGridSortingEventArgs(column));
+    }
+}
+
+internal sealed class StoredDataDialog : Window
+{
+    private readonly DataGrid _items = new() { IsReadOnly = true, AutoGenerateColumns = false, CanUserAddRows = false, SelectionMode = DataGridSelectionMode.Single, EnableRowVirtualization = true };
+    private readonly TextBlock _usage = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly TextBox _detail = new() { IsReadOnly = true, TextWrapping = TextWrapping.Wrap, MinHeight = 80, MaxHeight = 140, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+    private readonly TextBlock _status = new() { TextWrapping = TextWrapping.Wrap };
+    private readonly Button _undo = new() { Content = "Yêu cầu hoàn tác…" };
+    private readonly Button _discard = new() { Content = "Bỏ bản hoàn tác…" };
+    private readonly Func<StoredDataItem, ActionKind, CancellationToken, Task<(StoredDataInventory Inventory, string Message)>> _execute;
+    private readonly CancellationTokenSource _lifetime = new();
+    private bool _working, _closed;
+
+    internal StoredDataDialog(StoredDataInventory inventory, bool dark, Func<StoredDataItem, ActionKind, CancellationToken, Task<(StoredDataInventory Inventory, string Message)>> execute)
+    {
+        _execute = execute;
+        Title = "Dữ liệu và bản hoàn tác"; Width = 880; Height = 650; MinWidth = 660; MinHeight = 500;
+        WindowStartupLocation = WindowStartupLocation.CenterOwner; ShowInTaskbar = false; Theme.Apply(this, dark);
+        _items.HeadersVisibility = DataGridHeadersVisibility.Column; _items.GridLinesVisibility = DataGridGridLinesVisibility.Horizontal;
+        _items.SetResourceReference(DataGrid.HorizontalGridLinesBrushProperty, "BorderBrush");
+        var root = new DockPanel { Margin = new Thickness(24) };
+        var heading = new StackPanel();
+        heading.Children.Add(new TextBlock { Text = Title, FontSize = 22, FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 12) });
+        _usage.Margin = new Thickness(0, 0, 0, 10); heading.Children.Add(_usage);
+        heading.Children.Add(new TextBlock { Text = "Bỏ bản hoàn tác của biến môi trường chỉ xóa dữ liệu Nyan đã lưu. Bản startup cần được hoàn tác trước; bản file phục hồi chỉ xem và xử lý thủ công.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 14) });
+        DockPanel.SetDock(heading, Dock.Top); root.Children.Add(heading);
+        var bottom = new StackPanel { Margin = new Thickness(0, 12, 0, 0) };
+        bottom.Children.Add(_detail); _status.Margin = new Thickness(0, 8, 0, 8); bottom.Children.Add(_status);
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+        var close = new Button { Content = "Đóng", IsCancel = true, IsDefault = true };
+        close.Click += (_, _) => Close();
+        _discard.SetResourceReference(Control.ForegroundProperty, "DangerBrush");
+        _undo.Click += async (_, _) => await ActAsync(ActionKind.Undo);
+        _discard.Click += async (_, _) => await ActAsync(Selected?.Item.Kind == "snapshot" ? ActionKind.DeleteSnapshot : ActionKind.DiscardBackup);
+        buttons.Children.Add(_undo); buttons.Children.Add(_discard); buttons.Children.Add(close); bottom.Children.Add(buttons);
+        DockPanel.SetDock(bottom, Dock.Bottom); root.Children.Add(bottom);
+        foreach (var (key, title, width) in new[] { ("Kind", "Loại", 190d), ("Name", "Tên", 290d), ("At", "Thời điểm", 180d) })
+        {
+            var style = new Style(typeof(TextBlock));
+            style.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+            style.Setters.Add(new Setter(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center));
+            style.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding(key)));
+            _items.Columns.Add(new DataGridTextColumn { Header = title, Binding = new Binding(key), Width = key == "Name" ? new DataGridLength(1, DataGridLengthUnitType.Star) : new DataGridLength(width), MinWidth = 100, ElementStyle = style });
+        }
+        _items.SelectionChanged += (_, _) => UpdateSelection(); root.Children.Add(_items); Content = root;
+        Closed += (_, _) => { _closed = true; _lifetime.Cancel(); _lifetime.Dispose(); };
+        UpdateInventory(inventory);
+    }
+
+    private sealed record DisplayItem(StoredDataItem Item)
+    {
+        public string Name => Item.Name;
+        public string At => Item.At?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "Không có thời điểm";
+        public string Kind => Item.Kind switch { "environment" => "Hoàn tác biến môi trường", "startup-run" or "startup-file" => "Startup đã tắt", "quarantine" => "File phục hồi", "snapshot" => "Ảnh chụp cấu hình", _ => "Dữ liệu đã lưu" };
+    }
+    private DisplayItem? Selected => _items.SelectedItem as DisplayItem;
+    private static bool CanDiscard(StoredDataItem item) => item.CanDiscard && item.Kind is "environment" or "snapshot";
+    private static bool CanUndo(StoredDataItem item) => item.CanUndo && item.Kind is "environment" or "startup-run" or "startup-file";
+    private void UpdateInventory(StoredDataInventory inventory)
+    {
+        var selectedId = Selected?.Item.Id;
+        _usage.Text = $"Bản hoàn tác: {inventory.Items.Count(item => item.Kind != "snapshot"):N0}/{inventory.BackupLimit:N0} · Ảnh chụp: {inventory.Items.Count(item => item.Kind == "snapshot"):N0}/{inventory.SnapshotLimit:N0}";
+        var rows = inventory.Items.Select(item => new DisplayItem(item)).ToList(); _items.ItemsSource = rows;
+        _items.SelectedItem = rows.FirstOrDefault(row => row.Item.Id == selectedId);
+        UpdateSelection();
+    }
+    private void UpdateSelection()
+    {
+        var item = Selected?.Item;
+        _detail.Text = item?.Detail ?? "Chọn một mục để xem chi tiết và thao tác được hỗ trợ.";
+        _undo.IsEnabled = !_working && item is not null && CanUndo(item);
+        _discard.IsEnabled = !_working && item is not null && CanDiscard(item);
+        _discard.Content = item?.Kind == "snapshot" ? "Xóa ảnh chụp…" : "Bỏ bản hoàn tác…";
+    }
+    private async Task ActAsync(ActionKind kind)
+    {
+        if (_working || _closed || Selected?.Item is not { } item || (kind == ActionKind.Undo ? !CanUndo(item) : !CanDiscard(item))) return;
+        _working = true; UpdateSelection(); _status.Text = "Đang kiểm tra mục đã lưu và tạo preview…";
+        try
+        {
+            var result = await _execute(item, kind, _lifetime.Token);
+            if (!_closed) { UpdateInventory(result.Inventory); _status.Text = result.Message; }
+        }
+        catch (OperationCanceledException) { if (!_closed) _status.Text = "Đã hủy tác vụ."; }
+        catch (Exception error) { if (!_closed) _status.Text = error is AppException known ? known.Message : $"Không hoàn thành ({error.GetType().Name}). Bạn có thể đóng và mở lại danh sách."; }
+        finally { if (!_closed) { _working = false; UpdateSelection(); } }
+    }
+    internal string UsageForTest => _usage.Text;
+    internal int ItemsForTest => _items.Items.Count;
+    internal bool UndoEnabledForTest => _undo.IsEnabled;
+    internal bool DiscardEnabledForTest => _discard.IsEnabled;
+    internal void SelectForTest(string id) => _items.SelectedItem = _items.Items.Cast<DisplayItem>().FirstOrDefault(row => row.Item.Id == id);
+    internal void DiscardForTest() => _discard.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+    internal void UndoForTest() => _undo.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
 }
 
 internal sealed class PreviewDialog : Window

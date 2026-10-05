@@ -83,17 +83,58 @@ public static class Program
             foreach(var result in await JsonFileChecks.RunAsync(evidence))Add(result);
             foreach(var result in await ServiceChecks.RunAsync(evidence))Add(result);
             foreach(var result in await StoreChecks.RunAsync(evidence))Add(result);
+            await StoredDataRegressions(evidence);
             using var reader=new WindowsReader();
             foreach(var module in new[]{Module.Dashboard,Module.Applications,Module.Startup,Module.Processes,Module.Services,Module.DevTools,Module.Ports,Module.Environment,Module.Network})
             {
                 var result=await reader.ReadAsync(module,false,CancellationToken.None);
                 Check($"acceptance native read-only {module}: {result.State}",result.State is ResultState.Ready or ResultState.Partial or ResultState.Empty);
+                if(module is Module.Applications or Module.Startup)CheckSharedRegistryRows(result);
             }
         }
         catch(Exception error){Fail("Safe harness: "+Privacy.Error(error));}
         File.WriteAllLines(Path.Combine(evidence,"tests.txt"),Results);
         File.WriteAllText(Path.Combine(evidence,"summary.json"),JsonSerializer.Serialize(new{passed,failed,skipped,scope="Simulated service orchestration, isolated app store/files and native read-only; no registry/service/startup/environment/cleanup mutation",productionMutations="NOT_RUN",explorer="WAITING_FOR_USER"},new JsonSerializerOptions{WriteIndented=true}));
         Console.WriteLine($"PASS={passed} FAIL={failed} SKIP={skipped}; {evidence}");return failed==0?0:1;
+    }
+    static void CheckSharedRegistryRows(ModuleResult result)
+    {
+        var shared=result.Rows.Where(row=>row.Meta("snapshotLegacyId").Length>0).ToList();
+        var count=0;
+        using var root=RegistryKey.OpenBaseKey(RegistryHive.CurrentUser,RegistryView.Registry64);
+        if(result.Module==Module.Applications)
+        {
+            using var list=root.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Uninstall");
+            foreach(var name in list?.GetSubKeyNames()??Array.Empty<string>())using(var key=list!.OpenSubKey(name))if(!string.IsNullOrWhiteSpace(key?.GetValue("DisplayName") as string))count++;
+        }
+        else foreach(var leaf in new[]{"Run","RunOnce"})using(var key=root.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\"+leaf))count+=key?.GetValueNames().Length??0;
+        Check($"shared HKCU {result.Module} native count={count} rows={shared.Count}",shared.Count==count);
+        Check($"shared HKCU {result.Module} stable IDs and aliases",shared.All(row=>row.Id.Contains("Registry64",StringComparison.Ordinal)&&row.Meta("snapshotLegacyId")==row.Id.Replace("Registry64","Registry32",StringComparison.Ordinal)&&row.Cell("source").Contains("dùng chung",StringComparison.Ordinal))&&shared.Select(row=>row.Id).Distinct(StringComparer.Ordinal).Count()==shared.Count);
+        Check($"shared HKCU {result.Module} no legacy duplicate rows",!result.Rows.Any(row=>shared.Any(current=>current.Meta("snapshotLegacyId")==row.Id)));
+    }
+    static async Task StoredDataRegressions(string evidence)
+    {
+        var store=new AppStore(Path.Combine(evidence,"discard-controller"));
+        using var controller=new ControlCenter(new DeterministicReader(),store);
+        Dictionary<string,string> Backup(string value)=>new(){{"type","environment"},{"scope","User"},{"name","NYAN_FIXTURE"},{"value",value},{"exists","False"},{"kind","String"},{"afterFingerprint","fixture"}};
+        var id=Guid.NewGuid().ToString("N");store.PutBackup(id,Backup("original"));
+        var p=await controller.PreviewAsync(new(ActionKind.DiscardBackup,id),CancellationToken.None);
+        Check("app discard preview TTL non-elevated no Windows undo",p.ExpiresAt>DateTimeOffset.UtcNow&&p.ExpiresAt<=DateTimeOffset.UtcNow.AddMinutes(2)&&!p.RequiresElevation&&!p.CanUndo);
+        var cancelled=await controller.ExecuteAsync(p.Token,new CancellationToken(true));
+        Check("app discard cancel retains data and consumes token",cancelled.Status=="cancelled"&&store.GetBackups().Any(x=>x["id"]==id)&&(await controller.ExecuteAsync(p.Token,CancellationToken.None)).Status=="failed");
+        p=await controller.PreviewAsync(new(ActionKind.DiscardBackup,id),CancellationToken.None);store.PutBackup(id,Backup("changed"));
+        Check("app discard rechecks payload at execution",(await controller.ExecuteAsync(p.Token,CancellationToken.None)).Status=="failed"&&store.GetBackup(id)["value"]=="changed");
+        p=await controller.PreviewAsync(new(ActionKind.DiscardBackup,id),CancellationToken.None);
+        Check("app discard works in read-only redirected host without Windows writes",(await controller.ExecuteAsync(p.Token,CancellationToken.None)).Status=="success"&&!(await controller.GetStoredDataAsync(CancellationToken.None)).Items.Any(x=>x.Id==id));
+        Check("app discard token one use",(await controller.ExecuteAsync(p.Token,CancellationToken.None)).Status=="failed");
+        var startup=Guid.NewGuid().ToString("N");store.PutBackup(startup,new(){{"type","startup-run"},{"name","Owned startup"}});
+        await Expect("app discard refuses startup backup",()=>controller.PreviewAsync(new(ActionKind.DiscardBackup,startup),CancellationToken.None));
+        var snap=new Snapshot(Guid.NewGuid().ToString("N"),"Owned snapshot",DateTimeOffset.UtcNow,1,new());store.SaveSnapshot(snap);
+        p=await controller.PreviewAsync(new(ActionKind.DeleteSnapshot,snap.Id),CancellationToken.None);
+        var backupPath=Path.Combine(evidence,"discard-preview.nccbackup");store.Backup(backupPath);await controller.RestoreAsync(backupPath,CancellationToken.None);
+        Check("app restore invalidates discard preview",(await controller.ExecuteAsync(p.Token,CancellationToken.None)).Status=="failed"&&store.GetSnapshots().Any(x=>x.Id==snap.Id));
+        p=await controller.PreviewAsync(new(ActionKind.DeleteSnapshot,snap.Id),CancellationToken.None);
+        Check("app snapshot deletion confirms exact item",(await controller.ExecuteAsync(p.Token,CancellationToken.None)).Status=="success"&&store.GetSnapshots().Count==0);
     }
     static async Task EnvironmentTests(Mutations mutations,AppStore store,string keyPath)
     {

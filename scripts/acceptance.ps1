@@ -1,5 +1,6 @@
 ﻿# Human opens Nghiem-Thu-Nyan.cmd from Explorer. No SDK, elevation or policy bypass.
 $ErrorActionPreference='Stop'
+. "$PSScriptRoot/acceptance-report.ps1"
 $repoRoot=Split-Path -Parent $PSScriptRoot
 $release=Get-Content -LiteralPath "$PSScriptRoot/release.json" -Raw | ConvertFrom-Json
 $folder=Join-Path $repoRoot ('artifacts/'+$release.folder)
@@ -34,24 +35,26 @@ function Invoke-Acceptance([string]$mode,[string]$resultLeaf) {
     Start-Sleep -Milliseconds 500
     $launch.Dispose()
 }
-Invoke-Acceptance '--capture-native' 'result.txt'
+$summary=Write-NyanAcceptanceSummary $root $declaration
+try { Invoke-Acceptance '--capture-native' 'result.txt' } finally { $summary=Write-NyanAcceptanceSummary $root $declaration;Show-NyanAcceptanceSummary $summary }
 $readResult=Get-Content -LiteralPath (Join-Path $root 'result.txt')
 if($readResult[0] -ne 'PASS') { throw ("Read acceptance failed:`n"+($readResult -join [Environment]::NewLine)+"`nEvidence: "+$root) }
 $context=Get-Content -LiteralPath (Join-Path $root 'read-context.json') -Raw | ConvertFrom-Json
 $persistence=Get-Content -LiteralPath (Join-Path $root 'persistence.json') -Raw | ConvertFrom-Json
 if($context.elevated -or $persistence.result -ne 'PASS') { throw 'Ordinary user / private persistence failed.' }
 Write-Host "Native read PASS; elevated=$($context.elevated); packaged=$($context.packaged); redirectedAppData=$($context.redirectedAppData)"
-Invoke-Acceptance '--acceptance-session' 'session-closed.json'
+try { Invoke-Acceptance '--acceptance-session' 'session-closed.json' } finally { $summary=Write-NyanAcceptanceSummary $root $declaration }
 Write-Host 'Reopen the same private store to check theme persistence; close this second window.'
 # Keep the first close evidence, then reuse only this same isolated store.
 Move-Item -LiteralPath (Join-Path $root 'session-closed.json') -Destination (Join-Path $root 'session-first-close.json')
-Invoke-Acceptance '--acceptance-session' 'session-closed.json'
+try { Invoke-Acceptance '--acceptance-session' 'session-closed.json' } finally { $summary=Write-NyanAcceptanceSummary $root $declaration }
 $first=Get-Content -LiteralPath (Join-Path $root 'session-first-close.json') -Raw | ConvertFrom-Json
 $second=Get-Content -LiteralPath (Join-Path $root 'session-closed.json') -Raw | ConvertFrom-Json
 $opens=@(Get-ChildItem -LiteralPath $root -Filter 'session-open-*.json' | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json } | Sort-Object at)
 $manual=Read-Host 'After both real windows: navigation, Ctrl+K, F5 selection, resize, Vietnamese text and theme reopen OK? Type OK or describe the issue'
-@{at=(Get-Date).ToUniversalTime().ToString('o');humanObservation=$manual;themeOnFirstClose=$first.dark;themeOnSecondOpen=$opens[-1].dark;themeReopenNativeMatches=($first.dark -eq $opens[-1].dark);explorer=if($declaration -ceq 'EXPLORER'){'USER_DECLARED'}else{'UNVERIFIED'};nativeRead='PASS';privatePersistence=$persistence.result;productionMutations='NOT_RUN';uac='WAITING_FOR_USER';automaticResult='PARTIAL'} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $root 'acceptance-summary.json') -Encoding utf8
-if($context.packaged -or $context.redirectedAppData) { Write-Host 'Host redirection detected. Guard unchanged; open this launcher from Explorer. No data migration. Mutation cases unavailable.'; return }
+$summary=Write-NyanAcceptanceSummary $root $declaration $manual
+Show-NyanAcceptanceSummary $summary
+if($context.packaged -or $context.redirectedAppData) { Write-Host 'Host redirection detected. Guard unchanged; open this launcher from Explorer. No data migration. Mutation cases unavailable.'; if($summary.automaticResult -eq 'FAIL'){exit 1}; return }
 Write-Host 'Default read-only acceptance complete. Optional Windows resource cases require their own explicit dialog; blank exits.'
 Write-Host '1 User environment | 2 User startup | 3 owned process/port | 4 owned temp recycle | 5 System environment | 6 registered service'
 Write-Host 'Service registration/removal: separate elevated PowerShell, service-fixture.ps1 -Root <this evidence root> -Action Register/Remove; each asks exact object confirmation.'
@@ -64,3 +67,4 @@ while($true) {
     Get-Content -LiteralPath (Join-Path $root ($kind+'-result.json'))
 }
 Write-Host "Evidence retained: $root"
+if($summary.automaticResult -eq 'FAIL') { exit 1 }

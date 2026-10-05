@@ -45,6 +45,13 @@ public sealed class Mutations
             string title="",target="",before="",after="",warning="",token=Guid.NewGuid().ToString("N");bool undo=false,elevation=false;
             switch(request.Kind)
             {
+                case ActionKind.DiscardBackup:
+                case ActionKind.DeleteSnapshot:
+                    var storedKind=request.Kind==ActionKind.DeleteSnapshot?"snapshot":"environment";
+                    var item=store.GetStoredDataInventory().Items.FirstOrDefault(x=>x.Id==request.TargetId&&x.Kind==storedKind&&x.CanDiscard)??throw new AppException("scope","Mục này không được phép loại bỏ; startup/quarantine cần giữ để phục hồi.");
+                    fields["storedKind"]=storedKind;fields["itemId"]=item.Id;fields["fingerprint"]=store.GetDiscardFingerprint(storedKind,item.Id);
+                    title=storedKind=="snapshot"?"Xóa ảnh chụp đã lưu":"Bỏ bản hoàn tác biến môi trường";target=item.Name;before="Đang lưu trong dữ liệu ứng dụng";after="Giải phóng một chỗ trong kho dữ liệu";
+                    warning="Không thay đổi Windows. Bản đã bỏ không thể hoàn tác; hãy backup dữ liệu app nếu cần giữ lại.";break;
                 case ActionKind.EndProcess:
                     if(row==null||!int.TryParse(row.Meta("pid"),out var pid)||!long.TryParse(row.Meta("startTicks"),out var ticks))throw new AppException("identity","Tải lại danh sách process/port để xác minh danh tính.");
                     using(var process=NativeSecurity.CheckedProcess(pid,ticks)){target=$"{process.ProcessName} (PID {pid})";fields["pid"]=pid.ToString();fields["startTicks"]=ticks.ToString();}
@@ -88,7 +95,7 @@ public sealed class Mutations
     }
     public async Task<ActionOutcome> ExecuteAsync(string token,CancellationToken ct)
     {
-        if(fixture==null&&(NativeSecurity.HasPackageIdentity||NativeSecurity.HasAppDataRedirection))return new("failed","Host đang chuyển hướng dữ liệu Windows. Hãy mở EXE từ File Explorer rồi tạo preview mới; chưa thay đổi Windows.");
+        if(fixture==null&&(NativeSecurity.HasPackageIdentity||NativeSecurity.HasAppDataRedirection)&&!(plans.TryGetValue(token,out var appPlan)&&IsAppDataAction(appPlan.Preview.Kind)))return new("failed","Host đang chuyển hướng dữ liệu Windows. Hãy mở EXE từ File Explorer rồi tạo preview mới; chưa thay đổi Windows.");
         try{await serial.WaitAsync(ct);}catch(OperationCanceledException){var cancelled=new ActionOutcome("cancelled","Đã hủy trước khi thực thi.");return plans.TryRemove(token,out var pending)?RecordOutcome(pending,cancelled):cancelled;}MutationPlan? plan=null;
         try
         {
@@ -106,11 +113,17 @@ public sealed class Mutations
     }
     public async Task<ActionOutcome> ExecutePlanAsync(MutationPlan plan,CancellationToken ct)
     {
-        if(fixture==null&&(NativeSecurity.HasPackageIdentity||NativeSecurity.HasAppDataRedirection))return new("failed","Host đang chuyển hướng dữ liệu Windows. Hãy mở EXE từ File Explorer; chưa thay đổi Windows.");
+        if(!IsAppDataAction(plan.Preview.Kind)&&fixture==null&&(NativeSecurity.HasPackageIdentity||NativeSecurity.HasAppDataRedirection))return new("failed","Host đang chuyển hướng dữ liệu Windows. Hãy mở EXE từ File Explorer; chưa thay đổi Windows.");
         if(plan.Preview.ExpiresAt<DateTimeOffset.UtcNow)throw new AppException("expired","Yêu cầu đã hết hạn; không thay đổi hệ thống.");
         var fields=plan.Fields;
         switch(plan.Preview.Kind)
         {
+            case ActionKind.DiscardBackup:
+            case ActionKind.DeleteSnapshot:
+                ct.ThrowIfCancellationRequested();
+                var expectedKind=plan.Preview.Kind==ActionKind.DeleteSnapshot?"snapshot":"environment";
+                if(fields["storedKind"]!=expectedKind)throw new AppException("scope","Loại dữ liệu ngoài phạm vi preview.");
+                store.DiscardData(expectedKind,fields["itemId"],fields["fingerprint"]);return new("success","Đã loại bỏ đúng mục dữ liệu app; không thay đổi Windows.",1);
             case ActionKind.EndProcess:
                 if(fields.ContainsKey("endpointId"))await ValidateEndpointAsync(fields,ct);
                 using(var p=NativeSecurity.CheckedProcess(int.Parse(fields["pid"]),long.Parse(fields["startTicks"]))){ct.ThrowIfCancellationRequested();p.Kill(false);using var timeout=CancellationTokenSource.CreateLinkedTokenSource(ct);timeout.CancelAfter(5000);await p.WaitForExitAsync(timeout.Token);if(!p.HasExited)throw new AppException("process","Process chưa kết thúc.");}return new("success","Đã xác nhận process kết thúc.",1);
@@ -126,6 +139,7 @@ public sealed class Mutations
             default:throw new AppException("action","Thao tác không được hỗ trợ.");
         }
     }
+    static bool IsAppDataAction(ActionKind kind)=>kind is ActionKind.DiscardBackup or ActionKind.DeleteSnapshot;
     internal ActionOutcome RecordOutcome(MutationPlan plan,ActionOutcome outcome)
     {
         try{store.AddHistory(new(Guid.NewGuid().ToString("N"),DateTimeOffset.Now,SafeHistory(plan.Preview.Title,128),SafeHistory(plan.Preview.Target,4096),outcome.Status,SafeHistory(outcome.Message,4096),outcome.UndoId));return outcome;}

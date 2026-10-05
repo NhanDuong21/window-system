@@ -2,6 +2,12 @@
 . "$PSScriptRoot/common.ps1"
 $evidence=Join-Path $script:RepoRoot ('.evidence/verify-'+[guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $evidence | Out-Null
+$reportRoot=Join-Path $evidence 'acceptance-report'
+New-Item -ItemType Directory -Path $reportRoot | Out-Null
+Set-Content -LiteralPath (Join-Path $reportRoot '.nyan-fixture') -Value 'Owned summary regression files'
+$windowsPowerShell=Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
+& $windowsPowerShell -NoProfile -NonInteractive -File "$PSScriptRoot/check-acceptance-report.ps1" -Root $reportRoot
+if($LASTEXITCODE -ne 0){throw 'Acceptance report regression failed.'}
 Invoke-Dotnet restore NyanControlCenter.sln --locked-mode
 Invoke-Dotnet build NyanControlCenter.sln -c Release --no-restore
 $probe=Start-Process -FilePath $script:Dotnet -ArgumentList @('tests/Nyan.Tests/bin/Release/net10.0-windows/Nyan.Tests.dll','--failure-aggregation-check') -WorkingDirectory $script:RepoRoot -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $evidence 'expected-failure-probe.txt') -RedirectStandardError (Join-Path $evidence 'expected-failure-probe-error.txt')

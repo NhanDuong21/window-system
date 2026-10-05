@@ -1,4 +1,8 @@
-# Nghiệm thu hiện tại — Nyan Control Center 1.0.2
+# Đợt sửa 1.0.3 — source triển khai, artifact đang kiểm
+
+Theo quyết định của user: sửa năm finding và điều tra CPU riêng; không làm lại app, không bắt đầu lại18phase. Chi tiết implementation, baseline regressions, compatibility và plan cố định ở [FIX-1.0.3.md](FIX-1.0.3.md). Source giữ WPF/basic tiếng Việt. Safe suite99PASS, PS5.1 report13PASS, WPF70PASS; source cuối và artifact sẽ ghi sau packaging. Windows/UAC thật NOT_RUN, Explorer vẫn chờ user, spikeCPU cũ chưa giải thích. Không dùng test count để đóng các gap này.
+
+# Baseline nghiệm thu — Nyan Control Center 1.0.2
 
 **PARTIAL; lượt Explorer 1.0.2 đã qua native read và persistence riêng, còn UI và hiệu năng.** Bản 1.0.2 sửa lỗi JSON của lần nghiệm thu 1.0.1 bạn vừa báo. Launcher vẫn là `Nghiem-Thu-Nyan.cmd`; không sửa/xóa evidence cũ, không reset state hoặc đổi policy. Các workflow production Windows/UAC vẫn NOT_RUN.
 

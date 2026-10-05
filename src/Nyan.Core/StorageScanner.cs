@@ -145,6 +145,7 @@ public sealed class StorageScanner
     private static bool IsPartialError(Exception ex) => ex is IOException or UnauthorizedAccessException or Win32Exception or AppException or System.Security.SecurityException;
     private static Row MakeRow(string path, bool directory, long length, long? allocated, Metadata metadata, bool duplicate)
     {
+        var effectiveAllocated = duplicate ? 0 : allocated;
         var id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(path.ToUpperInvariant())));
         var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(path));
         if (name.Length == 0) name = Path.GetPathRoot(path) ?? path;
@@ -152,13 +153,14 @@ public sealed class StorageScanner
         {
             ["path"] = path, ["kind"] = directory ? "directory" : "file",
             ["length"] = length.ToString(CultureInfo.InvariantCulture),
+            ["allocatedBytes"] = effectiveAllocated?.ToString(CultureInfo.InvariantCulture) ?? "",
             ["lastWriteTicks"] = metadata.LastWriteTicks.ToString(CultureInfo.InvariantCulture),
             ["identity"] = metadata.Identity, ["duplicate"] = duplicate ? "true" : "false"
         };
         return new(id, new()
         {
             ["name"] = name, ["size"] = FormatBytes(length),
-            ["allocated"] = allocated.HasValue ? FormatBytes(duplicate ? 0 : allocated.Value) : "Không xác định",
+            ["allocated"] = effectiveAllocated.HasValue ? FormatBytes(effectiveAllocated.Value) : "Không xác định",
             ["type"] = directory ? "Thư mục" : duplicate ? "Hard link (đã tính)" : Path.GetExtension(path) is { Length: > 0 } extension ? extension : "Tệp",
             ["path"] = MaskPath(path)
         }, data);

@@ -1,4 +1,8 @@
-# Nghiệm thu hiện tại 1.0.2 — sửa lỗi PS5.1 BOM
+# Đợt sửa hiện tại 1.0.3 — chờ kiểm artifact
+
+Năm finding rõ nguyên nhân đã triển khai; chi tiết ở `docs/FIX-1.0.3.md`. Giữ18phase/WPF/basic tiếng Việt, quota100 và budgetCPU1%. Test tích hợp99PASS, PS5.1 report13PASS, WPF70PASS; final source verification/package đang hoàn tất. Dữ liệu/quarantine/Startup không tự prune; Windowsguard/helper whitelist giữ nguyên. Baseline trace1.0.2 không tái hiện spike; plan3unprofiled+1profile1.0.3 cố định trước đo. Chưa gọi CPU đã giải quyết hoặc toàn bộ nghiệm thu PASS. Explorer/productionWindows/UAC vẫn chưa đủ bằng chứng. Chỉ fixtures/appfiles/read-only; PR#1 draft, không merge.
+
+# Baseline 1.0.2 — sửa lỗi PS5.1 BOM
 
 **PARTIAL / WAITING_FOR_USER_UI**. Lượt mới `.evidence/acceptance-858cceaea5ce4551936a796aaa272bc7` do user cung cấp đã ghi USER_DECLARED Explorer 1.0.2; source/hash/root khớp artifact. Native read và isolated persistence/backup/restore PASS; main/session đều elevated=false/package=false/**redirectedAppData=false**. Native Services 321/Ports 222 Ready, các nguồn Partial/Empty được giữ đúng scope. Đây là bằng chứng ngoài host mới; không tự suy Explorer hoặc mutation PASS từ child context.
 

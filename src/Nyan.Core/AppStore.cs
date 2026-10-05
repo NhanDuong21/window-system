@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Globalization;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
 using System.Security.Principal;
@@ -64,13 +65,14 @@ public sealed class AppStore
             var complete = leftCoverage is "Ready" or "Empty" && rightCoverage is "Ready" or "Empty";
             if (!complete || leftCoverage != rightCoverage)
                 changes.Add(new(module, "Coverage", "__coverage", leftCoverage, rightCoverage + (complete ? "" : " · Không kết luận thêm/xóa vì phạm vi đọc chưa đầy đủ.")));
-            var oldRows = leftRows.Where(row => row.Id != "__coverage").ToDictionary(row => row.Id, StringComparer.Ordinal);
-            var newRows = rightRows.Where(row => row.Id != "__coverage").ToDictionary(row => row.Id, StringComparer.Ordinal);
+            var aliases = module is "Applications" or "Startup" ? SnapshotAliases(leftRows.Concat(rightRows)) : new Dictionary<string, string>(StringComparer.Ordinal);
+            var oldRows = ComparableRows(leftRows, aliases);
+            var newRows = ComparableRows(rightRows, aliases);
             foreach (var id in oldRows.Keys.Union(newRows.Keys, StringComparer.Ordinal).Order(StringComparer.Ordinal))
             {
                 if (!oldRows.TryGetValue(id, out var before)) { if (complete) changes.Add(new(module, "Added", id, "", Describe(newRows[id]))); }
                 else if (!newRows.TryGetValue(id, out var after)) { if (complete) changes.Add(new(module, "Removed", id, Describe(before), "")); }
-                else foreach (var key in before.Cells.Keys.Union(after.Cells.Keys, StringComparer.Ordinal).Order(StringComparer.Ordinal))
+                else foreach (var key in before.Cells.Keys.Union(after.Cells.Keys, StringComparer.Ordinal).Where(key => key != "__legacyId").Order(StringComparer.Ordinal))
                 {
                     var left = before.Cells.GetValueOrDefault(key, "");
                     var right = after.Cells.GetValueOrDefault(key, "");
@@ -119,7 +121,10 @@ public sealed class AppStore
         ValidateBackupMap(values);
         if (values.ContainsKey("id")) throw Error("invalid_import", "Trường id được dành riêng.");
         if (!state.Backups.ContainsKey(id) && state.Backups.Count >= MaxBackups) throw Error("limit", "Đã đạt giới hạn 100 bản hoàn tác.");
-        state.Backups[id] = new(values, StringComparer.Ordinal);
+        var backup = new Dictionary<string, string>(values, StringComparer.Ordinal);
+        if (!backup.ContainsKey("createdAt")) backup["createdAt"] = state.Backups.GetValueOrDefault(id)?.GetValueOrDefault("createdAt") ?? DateTimeOffset.UtcNow.ToString("O", CultureInfo.InvariantCulture);
+        ValidateBackupMap(backup);
+        state.Backups[id] = backup;
     });
     public Dictionary<string, string> GetBackup(string id) => Read<Dictionary<string, string>>(state =>
     {
@@ -132,6 +137,66 @@ public sealed class AppStore
         return result;
     }).ToList());
     public void RemoveBackup(string id) => Write(state => { ValidateId(id); state.Backups.Remove(id); });
+    public StoredDataInventory GetStoredDataInventory() => Read(state =>
+    {
+        var items = state.Backups.Select(pair => StoredBackup(pair.Key, pair.Value)).ToList();
+        items.AddRange(state.Snapshots.Select(snapshot => new StoredDataItem(snapshot.Id, "snapshot", SafeLabel(snapshot.Name), "Ảnh chụp cấu hình; xóa chỉ dữ liệu ứng dụng.", true, false, snapshot.At)));
+        return new StoredDataInventory(MaxBackups, MaxSnapshots, items.OrderByDescending(item => item.At).ThenBy(item => item.Kind, StringComparer.Ordinal).ThenBy(item => item.Id, StringComparer.Ordinal).ToList());
+    });
+    public string GetDiscardFingerprint(string kind, string id) => Read(state => DiscardFingerprint(state, kind, id));
+    public void DiscardData(string kind, string id, string fingerprint) => Write(state =>
+    {
+        if (!StringComparer.Ordinal.Equals(DiscardFingerprint(state, kind, id), fingerprint)) throw Error("stale", "Dữ liệu đã thay đổi sau preview; hãy tải lại trước khi xóa.");
+        if (kind == "environment") state.Backups.Remove(id);
+        else state.Snapshots.RemoveAll(snapshot => snapshot.Id == id);
+    });
+
+    private static StoredDataItem StoredBackup(string id, Dictionary<string, string> backup)
+    {
+        var kind = backup.GetValueOrDefault("type", "unknown");
+        var name = kind switch
+        {
+            "environment" or "startup-run" or "startup-file" => SafeLabel(backup.GetValueOrDefault("name", "Bản hoàn tác")),
+            "quarantine" => "File giữ an toàn trong quarantine",
+            _ => "Bản hoàn tác khác"
+        };
+        var detail = kind switch
+        {
+            "environment" => "Hoàn tác biến môi trường " + (backup.GetValueOrDefault("scope") switch { "User" => "User", "Machine" => "System", _ => "" }) + "; xóa bản sao không đổi Windows.",
+            "startup-run" or "startup-file" => "Bản gốc Startup; cần giữ để có thể bật lại.",
+            "quarantine" => "Dữ liệu phục hồi file; giữ nguyên bản ghi và file.",
+            _ => "Dữ liệu phục hồi không hỗ trợ xóa trong ứng dụng."
+        };
+        var required = kind switch
+        {
+            "environment" => new[] { "scope", "name", "value", "exists", "kind", "afterFingerprint" },
+            "startup-run" => new[] { "key", "name", "value", "view", "registryKind" },
+            "startup-file" => new[] { "path", "contents" },
+            _ => Array.Empty<string>()
+        };
+        DateTimeOffset? at = DateTimeOffset.TryParseExact(backup.GetValueOrDefault("createdAt"), "O", CultureInfo.InvariantCulture, DateTimeStyles.None, out var created) ? created : null;
+        return new(id, kind is "environment" or "startup-run" or "startup-file" or "quarantine" ? kind : "unknown", name, detail, kind == "environment", required.Length > 0 && required.All(backup.ContainsKey), at);
+    }
+    private static string SafeLabel(string text) => new(Privacy.MaskPath(text).Take(120).Select(character => char.IsControl(character) ? ' ' : character).ToArray());
+    private static string DiscardFingerprint(State state, string kind, string id)
+    {
+        ValidateId(id);
+        byte[] payload;
+        if (kind == "environment")
+        {
+            if (!state.Backups.TryGetValue(id, out var backup)) throw Error("not_found", "Không còn bản hoàn tác này.");
+            if (backup.GetValueOrDefault("type") != "environment") throw Error("scope", "Chỉ được xóa bản hoàn tác biến môi trường; giữ bản gốc Startup và quarantine.");
+            payload = Serialize(new { Kind = kind, Id = id, Values = new SortedDictionary<string, string>(backup, StringComparer.Ordinal) });
+        }
+        else if (kind == "snapshot")
+        {
+            var snapshot = FindSnapshot(state, id);
+            payload = Serialize(new { Kind = kind, snapshot.Id, snapshot.Name, snapshot.At, snapshot.SchemaVersion, Modules = snapshot.Modules.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => new { Module = pair.Key, Rows = pair.Value.OrderBy(row => row.Id, StringComparer.Ordinal).Select(row => new { row.Id, Cells = new SortedDictionary<string, string>(row.Cells, StringComparer.Ordinal) }) }) });
+        }
+        else throw Error("scope", "Chỉ được xóa snapshot hoặc bản hoàn tác biến môi trường.");
+        try { return Convert.ToHexString(SHA256.HashData(payload)); }
+        finally { CryptographicOperations.ZeroMemory(payload); }
+    }
 
     private T Read<T>(Func<State, T> action)
     {
@@ -262,7 +327,37 @@ public sealed class AppStore
         ValidateId(id);
         return state.Snapshots.Find(snapshot => snapshot.Id == id) ?? throw Error("not_found", "Không tìm thấy snapshot.");
     }
-    private static string Describe(Row row) => string.Join("; ", row.Cells.OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + "=" + pair.Value));
+    private static string Describe(Row row) => string.Join("; ", row.Cells.Where(pair => pair.Key != "__legacyId").OrderBy(pair => pair.Key, StringComparer.Ordinal).Select(pair => pair.Key + "=" + pair.Value));
+    private static Dictionary<string, string> SnapshotAliases(IEnumerable<Row> rows) => rows.Where(row => row.Id != "__coverage" && row.Cells.TryGetValue("__legacyId", out var alias) && alias != row.Id)
+        .GroupBy(row => row.Cells["__legacyId"], StringComparer.Ordinal)
+        .Where(group => group.Select(row => row.Id).Distinct(StringComparer.Ordinal).Count() == 1)
+        .ToDictionary(group => group.Key, group => group.First().Id, StringComparer.Ordinal);
+    private static Dictionary<string, Row> ComparableRows(List<Row> rows, Dictionary<string, string> aliases)
+    {
+        var result = new Dictionary<string, Row>(StringComparer.Ordinal);
+        var canonicalIds = aliases.Values.ToHashSet(StringComparer.Ordinal);
+        foreach (var row in rows.Where(row => row.Id != "__coverage"))
+        {
+            var id = row.Id;
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            while (aliases.TryGetValue(id, out var canonical))
+            {
+                if (!seen.Add(id)) { id = row.Id; break; }
+                id = canonical;
+            }
+            // The old store can contain both registry views. The canonical 64-bit row wins.
+            if (result.TryGetValue(id, out var current) && current.Id == id) continue;
+            var cells = new Dictionary<string, string>(row.Cells, StringComparer.Ordinal);
+            if ((id != row.Id || canonicalIds.Contains(id)) && cells.TryGetValue("source", out var source) && source.StartsWith("User /", StringComparison.Ordinal))
+            {
+                source = source.Replace("Registry 32 bit", "Registry dùng chung", StringComparison.Ordinal).Replace("Registry 64 bit", "Registry dùng chung", StringComparison.Ordinal);
+                if (source.EndsWith(" / 32 bit", StringComparison.Ordinal) || source.EndsWith(" / 64 bit", StringComparison.Ordinal)) source = source[..^6] + "Registry dùng chung";
+                cells["source"] = source;
+            }
+            result[id] = new(row.Id, cells);
+        }
+        return result;
+    }
     private static string Coverage(List<Row> rows) => rows.Find(row => row.Id == "__coverage")?.Cell("state") ?? "Unknown";
     private static void Prune(State state)
     {
@@ -306,6 +401,7 @@ public sealed class AppStore
                 if (row is null || !ids.Add(row.Id)) throw Error("invalid_import", "Dòng snapshot không hợp lệ hoặc trùng ID.");
                 ValidateText(row.Id, 4096, false);
                 ValidateMap(row.Cells, 32, 16 * 1024);
+                if (row.Cells.TryGetValue("__legacyId", out var alias) && (module is not (Module.Applications or Module.Startup) || alias.Length != 64 || alias.Any(character => !char.IsAsciiHexDigit(character)))) throw Error("invalid_import", "Alias snapshot không hợp lệ.");
                 if (row.Data is { Count: > 0 }) throw Error("invalid_import", "Snapshot chỉ chứa trường hiển thị; metadata điều khiển không được nhập.");
                 if (row.Id == "__coverage")
                 {
@@ -329,6 +425,7 @@ public sealed class AppStore
             ValidateText(pair.Key, 64, false);
             ValidateText(pair.Value, pair.Key == "contents" ? 6 * 1024 * 1024 : 64 * 1024);
         }
+        if (map.TryGetValue("createdAt", out var createdAt) && (!DateTimeOffset.TryParseExact(createdAt, "O", CultureInfo.InvariantCulture, DateTimeStyles.None, out var created) || created > DateTimeOffset.UtcNow.AddDays(1))) throw Error("invalid_import", "Thời gian bản hoàn tác không hợp lệ.");
     }
     private static void ValidateId(string id)
     {

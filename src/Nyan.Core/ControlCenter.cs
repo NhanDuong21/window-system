@@ -72,7 +72,12 @@ public sealed class ControlCenter : IControlCenter
         {
             var result=await ReadAsync(module,false,cancellationToken);cancellationToken.ThrowIfCancellationRequested();
             if(result.State is ResultState.Error or ResultState.Denied or ResultState.Cancelled)throw new AppException("snapshot","Không tạo ảnh chụp vì một nguồn không đọc được. Tải lại và thử lại.");
-            var rows=result.Rows.Select(r=>new Row(Privacy.Hash(r.Id),module==Module.Environment?r.Cells.Where(x=>x.Key is "name" or "scope").ToDictionary(x=>x.Key,x=>x.Value):r.Cells.ToDictionary(x=>x.Key,x=>Privacy.MaskPath(x.Value)))).ToList();
+            var rows=result.Rows.Select(r=>
+            {
+                var cells=module==Module.Environment?r.Cells.Where(x=>x.Key is "name" or "scope").ToDictionary(x=>x.Key,x=>x.Value):r.Cells.ToDictionary(x=>x.Key,x=>Privacy.MaskPath(x.Value));
+                if(r.Meta("snapshotLegacyId") is {Length:>0} legacy)cells["__legacyId"]=Privacy.Hash(legacy);
+                return new Row(Privacy.Hash(r.Id),cells);
+            }).ToList();
             rows.Add(new("__coverage",new(){{"state",result.State.ToString()},{"detail",Privacy.MaskPath(result.Message)}}));modules[module.ToString()]=rows;
         }
         var snapshot=new Snapshot(Guid.NewGuid().ToString("N"),name,DateTimeOffset.Now,1,modules);store.SaveSnapshot(snapshot);return snapshot;
@@ -82,6 +87,7 @@ public sealed class ControlCenter : IControlCenter
     public Task ImportSnapshotAsync(string path,CancellationToken cancellationToken){cancellationToken.ThrowIfCancellationRequested();store.ImportSnapshot(path);return Task.CompletedTask;}
     public Task BackupAsync(string path,CancellationToken cancellationToken){cancellationToken.ThrowIfCancellationRequested();store.Backup(path);return Task.CompletedTask;}
     public async Task RestoreAsync(string path,CancellationToken cancellationToken){await mutations.RestoreAsync(path,cancellationToken);lock(gate)cache.Clear();}
+    public Task<StoredDataInventory> GetStoredDataAsync(CancellationToken cancellationToken){cancellationToken.ThrowIfCancellationRequested();return Task.FromResult(store.GetStoredDataInventory());}
     public void OpenWindowsTool(Module module)
     {
         string? uri=module switch{Module.Applications=>"ms-settings:appsfeatures",Module.Startup=>"ms-settings:startupapps",Module.Network=>"ms-settings:network-status",_=>null};

@@ -78,6 +78,74 @@ public static class StoreChecks
         Check(File.ReadAllBytes(corruptFile).SequenceEqual(originalBytes) && Directory.EnumerateFiles(corrupt, "corrupt-*.ncc").Any(), "Corruption preserves original and evidence copy");
         Check(store.GetSnapshots().Count == 4, "Rejected writes preserve existing state");
 
+        var quotaRoot = CreateOwned("quota");
+        var quotaBackups = Enumerable.Range(0, 100).ToDictionary(index => "quota-undo-" + index, index => new Dictionary<string, string>
+        {
+            ["type"] = "environment", ["scope"] = "User", ["name"] = "NYAN_QUOTA_FIXTURE_" + index,
+            ["value"] = "fixture secret retained only in DPAPI", ["exists"] = "True", ["kind"] = "String", ["afterFingerprint"] = "fixture-after"
+        });
+        var quotaHistory = Enumerable.Range(0, 100).Select(index => new HistoryEntry("quota-history-" + index, DateTimeOffset.UtcNow.AddDays(-31), "fixture", "fixture", "success", "fixture", "quota-undo-" + index)).ToList();
+        var quotaSnapshots = Enumerable.Range(0, 100).Select(index => new Snapshot("quota-snapshot-" + index, "Fixture " + index, DateTimeOffset.Now, 1, new() { ["Applications"] = [Coverage("Empty")] })).ToList();
+        SeedEncryptedState(quotaRoot, quotaHistory, quotaSnapshots, quotaBackups);
+        var quota = new AppStore(quotaRoot);
+        var inventory = quota.GetStoredDataInventory();
+        Check(quota.GetHistory().Count == 0 && inventory.BackupLimit == 100 && inventory.SnapshotLimit == 100 && inventory.Items.Count == 200 && inventory.Items.Count(item => item.Kind == "environment" && item.CanDiscard && item.CanUndo && item.At is null) == 100, "Aged history retains discoverable undo inventory with legacy optional dates");
+        Check(!JsonSerializer.Serialize(inventory).Contains("fixture secret", StringComparison.Ordinal), "Stored data inventory never exposes original values or file contents");
+        Check(new AppStore(quotaRoot).GetStoredDataInventory().Items.Count == 200, "Stored data inventory survives DPAPI reload at both quotas");
+        ExpectCode(() => quota.PutBackup("quota-new", new() { ["type"] = "environment" }), "limit", "Backup quota still rejects the 101st item");
+        var staleUndo = quota.GetDiscardFingerprint("environment", "quota-undo-0");
+        var changedUndo = quota.GetBackup("quota-undo-0");
+        changedUndo["value"] = "changed fixture original";
+        quota.PutBackup("quota-undo-0", changedUndo);
+        ExpectCode(() => quota.DiscardData("environment", "quota-undo-0", staleUndo), "stale", "Discard rechecks changed backup payload before deleting");
+        Check(quota.GetStoredDataInventory().Items.Single(item => item.Id == "quota-undo-0").At is not null, "New backup writes add a creation time without rejecting legacy data");
+        quota.DiscardData("environment", "quota-undo-0", quota.GetDiscardFingerprint("environment", "quota-undo-0"));
+        quota.PutBackup("quota-new", new() { ["type"] = "environment" });
+        Check(new AppStore(quotaRoot).GetBackups().Count == 100 && quota.GetBackups().All(item => item["id"] != "quota-undo-0"), "Confirmed environment discard frees quota without Windows mutation");
+        var staleSnapshot = quota.GetDiscardFingerprint("snapshot", "quota-snapshot-0");
+        quota.SaveSnapshot(quota.GetSnapshot("quota-snapshot-0") with { Name = "Changed fixture" });
+        ExpectCode(() => quota.DiscardData("snapshot", "quota-snapshot-0", staleSnapshot), "stale", "Snapshot discard rechecks changed payload");
+        ExpectCode(() => quota.SaveSnapshot(new("quota-snapshot-new", "Fixture", DateTimeOffset.Now, 1, new())), "limit", "Snapshot quota still rejects the 101st item");
+        quota.DiscardData("snapshot", "quota-snapshot-0", quota.GetDiscardFingerprint("snapshot", "quota-snapshot-0"));
+        quota.SaveSnapshot(new("quota-snapshot-new", "Fixture", DateTimeOffset.Now, 1, new()));
+        Check(new AppStore(quotaRoot).GetSnapshots().Count == 100 && quota.GetSnapshots().All(item => item.Id != "quota-snapshot-0"), "Confirmed snapshot discard frees quota and persists after reload");
+
+        var protectedRoot = CreateOwned("protected-backups");
+        var protectedFile = Path.Combine(protectedRoot, "retained-fixture.txt");
+        File.WriteAllText(protectedFile, "owned fixture contents must remain");
+        var protectedStore = new AppStore(protectedRoot);
+        protectedStore.PutBackup("protected-startup", new() { ["type"] = "startup-file", ["name"] = "retained-fixture.txt", ["path"] = protectedFile, ["contents"] = Convert.ToBase64String(Encoding.UTF8.GetBytes("owned fixture contents must remain")) });
+        protectedStore.PutBackup("protected-quarantine", new() { ["type"] = "quarantine", ["path"] = protectedFile, ["quarantine"] = protectedFile, ["identity"] = "fixture" });
+        ExpectCode(() => protectedStore.GetDiscardFingerprint("startup-file", "protected-startup"), "scope", "Startup originals cannot receive a discard preview");
+        ExpectCode(() => protectedStore.DiscardData("environment", "protected-startup", "forged"), "scope", "Environment discard cannot target Startup originals");
+        ExpectCode(() => protectedStore.DiscardData("quarantine", "protected-quarantine", "forged"), "scope", "Quarantine records cannot be discarded");
+        Check(protectedStore.GetStoredDataInventory().Items.All(item => !item.CanDiscard) && protectedStore.GetBackups().Count == 2 && File.ReadAllText(protectedFile) == "owned fixture contents must remain", "Forbidden discard preserves both recovery records and owned files");
+
+        var aliasStore = new AppStore(CreateOwned("snapshot-aliases"));
+        foreach (var module in new[] { "Applications", "Startup" })
+        {
+            var canonical = Privacy.Hash(module + "-HKCU-Registry64-fixture");
+            var alias = Privacy.Hash(module + "-HKCU-Registry32-fixture");
+            var distinct = Privacy.Hash(module + "-HKLM-Registry32-distinct");
+            var oldSource32 = module == "Applications" ? "User / Registry 32 bit" : "User / Run / 32 bit";
+            var oldSource64 = module == "Applications" ? "User / Registry 64 bit" : "User / Run / 64 bit";
+            var newSource = module == "Applications" ? "User / Registry dùng chung" : "User / Run / Registry dùng chung";
+            var oldRows = new List<Row> { new(alias, new() { ["name"] = "Same fixture name", ["version"] = "obsolete mirror", ["source"] = oldSource32 }), new(canonical, new() { ["name"] = "Same fixture name", ["version"] = "1", ["source"] = oldSource64 }), new(distinct, new() { ["name"] = "Same fixture name", ["version"] = "1", ["source"] = "System / Registry 32 bit" }) };
+            var newRows = new List<Row> { new(canonical, new() { ["name"] = "Same fixture name", ["version"] = "1", ["source"] = newSource, ["__legacyId"] = alias }), oldRows[2] };
+            aliasStore.SaveSnapshot(MigrationSnapshot("old-" + module, module, oldRows));
+            aliasStore.SaveSnapshot(MigrationSnapshot("new-" + module, module, newRows));
+            Check(aliasStore.CompareSnapshots("old-" + module, "new-" + module).Count == 0 && aliasStore.CompareSnapshots("new-" + module, "old-" + module).Count == 0, module + " legacy aliases fold duplicate views and source labels in both directions");
+            var changedRows = newRows.Select(row => row.Id == canonical ? row with { Cells = new(row.Cells) { ["version"] = "2" } } : row).ToList();
+            aliasStore.SaveSnapshot(MigrationSnapshot("changed-" + module, module, changedRows));
+            var aliasDiff = aliasStore.CompareSnapshots("old-" + module, "changed-" + module);
+            Check(aliasDiff.Count == 1 && aliasDiff[0].Kind == "Changed" && aliasDiff[0].Key == canonical + "/version" && aliasDiff[0].Before == "1" && aliasDiff[0].After == "2", module + " alias migration preserves true field changes and canonical preference");
+            aliasStore.SaveSnapshot(MigrationSnapshot("removed-" + module, module, newRows.Take(1).ToList()));
+            var distinctDiff = aliasStore.CompareSnapshots("old-" + module, "removed-" + module);
+            Check(distinctDiff.Count == 1 && distinctDiff[0].Kind == "Removed" && distinctDiff[0].Key == distinct, module + " aliases never merge distinct IDs with the same name");
+            aliasStore.SaveSnapshot(MigrationSnapshot("empty-" + module, module, new()));
+            Check(aliasStore.CompareSnapshots("empty-" + module, "new-" + module).All(change => !change.After.Contains("__legacyId", StringComparison.Ordinal)), module + " alias metadata is excluded from added row descriptions");
+        }
+
         var scanRoot = CreateOwned("scan");
         // Marker itself is outside the scanned directory so size/count expectations are exact.
         var tree = Path.Combine(scanRoot, "cây dữ liệu");
@@ -95,6 +163,7 @@ public static class StoreChecks
         Check(scan.Files == (linked ? 3 : 2) && scan.Bytes == 13023, "Unicode scanner sizes / hard-link deduplication");
         Check(scan.AllocatedBytes is > 0 && scan.Rows.Any(row => row.Meta("kind") == "directory" && row.Meta("path") == child && row.Meta("length") == "678"), "Allocated metadata and directory aggregate rows");
         Check(scan.Rows.Any(row => row.Meta("path") == unicode && row.Meta("identity").Length > 0) && progress.Count > 0, "Scanner native identity and progress");
+        Check(scan.Rows.All(row => row.Meta("allocatedBytes") == "" || long.TryParse(row.Meta("allocatedBytes"), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var value) && value >= 0) && (!linked || scan.Rows.Single(row => row.Meta("duplicate") == "true").Meta("allocatedBytes") == "0"), "Scanner provides invariant allocated byte metadata including deduplicated hard links");
         using (var cancellation = new CancellationTokenSource())
         {
             cancellation.Cancel();
@@ -179,6 +248,22 @@ public static class StoreChecks
             catch (AppException) { results.Add("PASS " + name); return; }
             throw new InvalidOperationException("FAIL " + name);
         }
+        void ExpectCode(Action action, string code, string name)
+        {
+            try { action(); }
+            catch (AppException exception) when (exception.Code == code) { results.Add("PASS " + name); return; }
+            throw new InvalidOperationException("FAIL " + name);
+        }
+    }
+    private static Snapshot MigrationSnapshot(string id, string module, List<Row> rows) => new(id, "Fixture", DateTimeOffset.Now, 1, new() { [module] = rows.Concat([Coverage()]).ToList() });
+    private static void SeedEncryptedState(string root, List<HistoryEntry> history, List<Snapshot> snapshots, Dictionary<string, Dictionary<string, string>> backups)
+    {
+        if (!File.Exists(Path.Combine(root, ".nyan-fixture"))) throw new AppException("fixture_required", "Chỉ seed state dưới fixture có marker.");
+        var encrypted = NativeSecurity.Protect(JsonSerializer.SerializeToUtf8Bytes(new { SchemaVersion = 1, Settings = new AppSettings(), History = history, Snapshots = snapshots, Backups = backups }));
+        var prefix = Encoding.ASCII.GetBytes("NYAN-NCC1\0");
+        var payload = new byte[prefix.Length + encrypted.Length];
+        prefix.CopyTo(payload, 0); encrypted.CopyTo(payload, prefix.Length);
+        File.WriteAllBytes(Path.Combine(root, "state.ncc"), payload);
     }
     private static Snapshot SnapshotOf(string id, string version, string value) => new(id, "Fixture " + version, DateTimeOffset.Now, 1,
         new() { ["Applications"] = [new("stable", new() { ["name"] = "Fixture", ["version"] = value }), Coverage()] });

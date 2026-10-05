@@ -118,7 +118,7 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
         var failures = 0;
         const string uninstall = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
         foreach (var hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
-        foreach (var view in RegistryViews())
+        foreach (var view in RegistryViews(hive))
         {
             token.ThrowIfCancellationRequested();
             try
@@ -136,7 +136,11 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
                         var display = RegistryText(key, "DisplayName");
                         if (string.IsNullOrWhiteSpace(display)) continue;
                         var id = $"{hive}:{view}:{uninstall}\\{name}";
-                        var source = (hive == RegistryHive.CurrentUser ? "User" : "System") + " / " + (view == RegistryView.Registry64 ? "Registry 64 bit" : "Registry 32 bit");
+                        var source = hive == RegistryHive.CurrentUser ? "User / Registry dùng chung"
+                            : "System / " + (view == RegistryView.Registry64 ? "Registry 64 bit" : "Registry 32 bit");
+                        var data = new Dictionary<string, string> { ["source"] = source };
+                        if (hive == RegistryHive.CurrentUser)
+                            data["snapshotLegacyId"] = $"{hive}:{RegistryView.Registry32}:{uninstall}\\{name}";
                         var size = key.GetValue("EstimatedSize") is int kilobytes && kilobytes > 0 ? Bytes((ulong)kilobytes * 1024) : "Không có dữ liệu";
                         var date = RegistryText(key, "InstallDate");
                         if (DateTime.TryParseExact(date, "yyyyMMdd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var installed)) date = installed.ToString("dd/MM/yyyy");
@@ -144,7 +148,7 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
                             ["name"] = display, ["version"] = Empty(RegistryText(key, "DisplayVersion")),
                             ["publisher"] = Empty(RegistryText(key, "Publisher")), ["source"] = source,
                             ["size"] = size, ["date"] = Empty(date), ["path"] = PathDisplay(RegistryText(key, "InstallLocation"), reveal)
-                        }, new() { ["source"] = source }));
+                        }, data));
                     }
                     catch (Exception e) when (e is UnauthorizedAccessException or IOException or System.Security.SecurityException) { failures++; }
                 }
@@ -163,7 +167,7 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
         else failures++;
         rows.Sort((a, b) => StringComparer.CurrentCultureIgnoreCase.Compare(a.Cell("name"), b.Cell("name")));
         return Result(Module.Applications, [new("name", "Ứng dụng"), new("version", "Phiên bản"), new("publisher", "Nhà phát hành"), new("source", "Nguồn"), new("size", "Kích thước khai báo"), new("date", "Ngày cài khai báo"), new("path", "Thư mục cài")], rows, failures > 0,
-            $"Inventory Registry 32/64 bit và Appx của user hiện tại; không bảo đảm đầy đủ tuyệt đối. {FailureMessage(failures)}");
+            $"Inventory Registry User dùng chung, Registry System 32/64 bit và Appx của user hiện tại; không bảo đảm đầy đủ tuyệt đối. {FailureMessage(failures)}");
     }
 
     private async Task<ModuleResult> StartupAsync(bool reveal, CancellationToken token)
@@ -171,7 +175,7 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
         var rows = new List<Row>();
         var failures = 0;
         foreach (var hive in new[] { RegistryHive.CurrentUser, RegistryHive.LocalMachine })
-        foreach (var view in RegistryViews())
+        foreach (var view in RegistryViews(hive))
         foreach (var subkey in new[] { @"Software\Microsoft\Windows\CurrentVersion\Run", @"Software\Microsoft\Windows\CurrentVersion\RunOnce" })
         {
             token.ThrowIfCancellationRequested();
@@ -188,8 +192,12 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
                     var valueKind = key.GetValueKind(name);
                     var writable = hive == RegistryHive.CurrentUser && subkey.EndsWith("\\Run", StringComparison.Ordinal) && valueKind is RegistryValueKind.String or RegistryValueKind.ExpandString;
                     var id = $"{kind}:{view}:{subkey}:{name}";
-                    rows.Add(StartupRow(id, name, value, (hive == RegistryHive.CurrentUser ? "User" : "System") + " / " + subkey.Split('\\').Last() + " / " + (view == RegistryView.Registry64 ? "64 bit" : "32 bit"), writable, reveal,
-                        new() { ["kind"] = kind, ["key"] = subkey, ["name"] = name, ["value"] = value, ["view"] = view.ToString(), ["registryKind"] = valueKind.ToString(), ["writable"] = writable.ToString().ToLowerInvariant(), ["supported"] = writable.ToString().ToLowerInvariant() }));
+                    var source = (hive == RegistryHive.CurrentUser ? "User" : "System") + " / " + subkey.Split('\\').Last() + " / "
+                        + (hive == RegistryHive.CurrentUser ? "Registry dùng chung" : view == RegistryView.Registry64 ? "64 bit" : "32 bit");
+                    var data = new Dictionary<string, string> { ["kind"] = kind, ["key"] = subkey, ["name"] = name, ["value"] = value, ["view"] = view.ToString(), ["registryKind"] = valueKind.ToString(), ["writable"] = writable.ToString().ToLowerInvariant(), ["supported"] = writable.ToString().ToLowerInvariant() };
+                    if (hive == RegistryHive.CurrentUser)
+                        data["snapshotLegacyId"] = $"{kind}:{RegistryView.Registry32}:{subkey}:{name}";
+                    rows.Add(StartupRow(id, name, value, source, writable, reveal, data));
                 }
             }
             catch (Exception e) when (e is UnauthorizedAccessException or IOException or System.Security.SecurityException) { failures++; }
@@ -566,7 +574,9 @@ public sealed class WindowsReader : IWindowsReader, IDisposable
         return matches.FirstOrDefault();
     }
 
-    private static RegistryView[] RegistryViews() => Environment.Is64BitOperatingSystem ? [RegistryView.Registry64, RegistryView.Registry32] : [RegistryView.Registry32];
+    // These HKCU Software inventory keys are shared by WOW64 views; keep the existing 64-bit IDs on x64.
+    private static RegistryView[] RegistryViews(RegistryHive hive) => !Environment.Is64BitOperatingSystem ? [RegistryView.Registry32]
+        : hive == RegistryHive.CurrentUser ? [RegistryView.Registry64] : [RegistryView.Registry64, RegistryView.Registry32];
     private static string StableId(string prefix, string identity) => prefix + ":" + Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(identity)));
     private static string RegistryText(RegistryKey key, string name) => key.GetValue(name, "", RegistryValueOptions.DoNotExpandEnvironmentNames)?.ToString() ?? "";
     private static string Empty(string? value) => string.IsNullOrWhiteSpace(value) ? "Không có dữ liệu" : value;

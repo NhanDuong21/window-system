@@ -15,7 +15,7 @@ public sealed record ModuleResult(Module Module, List<Column> Columns, List<Row>
 }
 public sealed record ScanProgress(long Files, long Bytes, int Skipped, string Status);
 public sealed record ScanReport(string Root, List<Row> Rows, long Files, long Bytes, long? AllocatedBytes, int Skipped, bool Cancelled, DateTimeOffset CompletedAt);
-public enum ActionKind { EndProcess, DisableStartup, EnableStartup, SetEnvironment, DeleteEnvironment, StartService, StopService, RestartService, CleanupFiles, Undo }
+public enum ActionKind { EndProcess, DisableStartup, EnableStartup, SetEnvironment, DeleteEnvironment, StartService, StopService, RestartService, CleanupFiles, Undo, DiscardBackup, DeleteSnapshot }
 public sealed record ActionRequest(ActionKind Kind, string TargetId, Dictionary<string,string>? Values = null, List<string>? SelectedIds = null);
 public sealed record ActionPreview(string Token, ActionKind Kind, string Title, string Target, string Before, string After, string Warning, bool CanUndo, bool RequiresElevation, DateTimeOffset ExpiresAt);
 public sealed record RecycleReceipt(string OriginalPath, string Identity, string RecyclePath);
@@ -24,6 +24,8 @@ public sealed record HistoryEntry(string Id, DateTimeOffset At, string Action, s
 public sealed record Snapshot(string Id, string Name, DateTimeOffset At, int SchemaVersion, Dictionary<string,List<Row>> Modules);
 public sealed record SnapshotChange(string Module, string Kind, string Key, string Before, string After);
 public sealed record AppSettings(int SchemaVersion = 1, bool Dark = false, int RetentionDays = 30);
+public sealed record StoredDataItem(string Id, string Kind, string Name, string Detail, bool CanDiscard, bool CanUndo, DateTimeOffset? At = null);
+public sealed record StoredDataInventory(int BackupLimit, int SnapshotLimit, List<StoredDataItem> Items);
 
 public interface IWindowsReader
 {
@@ -43,6 +45,7 @@ public interface IControlCenter : IDisposable
     Task ImportSnapshotAsync(string path, CancellationToken cancellationToken);
     Task BackupAsync(string path, CancellationToken cancellationToken);
     Task RestoreAsync(string path, CancellationToken cancellationToken);
+    Task<StoredDataInventory> GetStoredDataAsync(CancellationToken cancellationToken);
     void OpenWindowsTool(Module module);
 }
 public sealed class AppException : Exception

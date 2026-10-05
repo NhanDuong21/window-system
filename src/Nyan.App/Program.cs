@@ -58,9 +58,13 @@ public static class Program
                             if(File.Exists(Path.Combine(evidence!,"ownership.json"))){Acceptance.Validate(evidence!);stage="Read context";Acceptance.Context(evidence!,"read");stage="Isolated persistence";Acceptance.Persistence(evidence!);}
                             notes.Add("Windows native x64; elevated="+NativeSecurity.IsAdministrator+"; packaged="+NativeSecurity.HasPackageIdentity+"; redirectedAppData="+NativeSecurity.HasAppDataRedirection);
                             // Measure stable idle separately from screenshot allocation/GC.
-                            stage="Native Settings / performance";await window.NavigateForTestAsync(Module.Settings);await Task.Delay(5000);
-                            var process=System.Diagnostics.Process.GetCurrentProcess();var cpuStart=process.TotalProcessorTime;var idleWatch=System.Diagnostics.Stopwatch.StartNew();await Task.Delay(10000);process.Refresh();var idleCpu=(process.TotalProcessorTime-cpuStart).TotalMilliseconds/idleWatch.Elapsed.TotalMilliseconds/Environment.ProcessorCount*100;
-                            File.WriteAllText(Path.Combine(evidence!,"release-performance.json"),System.Text.Json.JsonSerializer.Serialize(new{firstPaintMs,idleCpuPercent=idleCpu,workingSetMiB=process.WorkingSet64/1048576.0,privateMiB=process.PrivateMemorySize64/1048576.0,dpiScale=VisualTreeHelper.GetDpi(window).DpiScaleX,packaged=NativeSecurity.HasPackageIdentity,condition="Self-contained x64; first ContentRendered event; Settings idle settles for 5 seconds then CPU sampled over 10 seconds, before allocating capture images; CPU normalized by logical processor count",budgetFirstPaintMs=2500,budgetIdleCpuPercent=1.0,budgetWorkingSetMiB=350},new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
+                            stage="Native Settings / performance";await window.NavigateForTestAsync(Module.Settings);
+                            Acceptance.Write(evidence!,"performance-phase.json",new{phase="Settings settle",at=DateTimeOffset.UtcNow,pid=Environment.ProcessId});
+                            await Task.Delay(5000);
+                            using var process=System.Diagnostics.Process.GetCurrentProcess();var threadStart=ThreadCpu(process);var foregroundAtStart=window.IsActive;var taskAtStart=window.TaskRunningForTest;var cpuStart=process.TotalProcessorTime;var sampleStartedAt=DateTimeOffset.UtcNow;var idleWatch=System.Diagnostics.Stopwatch.StartNew();
+                            await Task.Delay(10000);process.Refresh();var sampleEndedAt=DateTimeOffset.UtcNow;var cpuMilliseconds=(process.TotalProcessorTime-cpuStart).TotalMilliseconds;idleWatch.Stop();var sampleElapsedMs=idleWatch.Elapsed.TotalMilliseconds;var idleCpu=cpuMilliseconds/sampleElapsedMs/Environment.ProcessorCount*100;
+                            var threadCpu=ThreadCpu(process).Select(pair=>new{threadId=pair.Key,cpuMilliseconds=pair.Value-threadStart.GetValueOrDefault(pair.Key)}).Where(pair=>pair.cpuMilliseconds>0).OrderByDescending(pair=>pair.cpuMilliseconds).ToArray();
+                            File.WriteAllText(Path.Combine(evidence!,"release-performance.json"),System.Text.Json.JsonSerializer.Serialize(new{firstPaintMs,idleCpuPercent=idleCpu,workingSetMiB=process.WorkingSet64/1048576.0,privateMiB=process.PrivateMemorySize64/1048576.0,dpiScale=VisualTreeHelper.GetDpi(window).DpiScaleX,packaged=NativeSecurity.HasPackageIdentity,activeModule=window.CurrentModuleForTest.ToString(),foregroundAtStart,foregroundAtEnd=window.IsActive,visible=window.IsVisible,taskAtStart,taskAtEnd=window.TaskRunningForTest,sampleStartedAt,sampleEndedAt,sampleElapsedMs,cpuMilliseconds,logicalProcessorCount=Environment.ProcessorCount,threadCpu,condition="Self-contained x64; first ContentRendered event; Settings idle settles for 5 seconds then CPU sampled over 10 seconds, before allocating capture images; CPU normalized by logical processor count",budgetFirstPaintMs=2500,budgetIdleCpuPercent=1.0,budgetWorkingSetMiB=350},new System.Text.Json.JsonSerializerOptions{WriteIndented=true}));
                             foreach(var module in new[]{Module.Dashboard,Module.Applications,Module.Startup,Module.Processes,Module.Storage,Module.Services,Module.DevTools,Module.Ports,Module.Environment,Module.Network,Module.Snapshots,Module.Cleanup,Module.History,Module.Settings})
                             {
                                 stage="Native "+module;
@@ -83,6 +87,13 @@ public static class Program
         }
         catch(Exception error){MessageBox.Show(Privacy.Error(error)+"\nDữ liệu gốc được giữ lại. Xem docs/OPERATIONS.md để khôi phục.","Nyan Control Center",MessageBoxButton.OK,MessageBoxImage.Error);return 1;}
         finally{center?.Dispose();}
+    }
+    static Dictionary<int,double> ThreadCpu(System.Diagnostics.Process process)
+    {
+        var result=new Dictionary<int,double>();
+        foreach(System.Diagnostics.ProcessThread thread in process.Threads)
+            using(thread)try{result[thread.Id]=thread.TotalProcessorTime.TotalMilliseconds;}catch(Exception error)when(error is System.ComponentModel.Win32Exception or InvalidOperationException){ }
+        return result;
     }
     public static void SaveImage(Window window,string path)
     {
