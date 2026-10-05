@@ -1,5 +1,9 @@
 # 1.0.3-docs1 — ứng viên nghiệm thu sử dụng
 
+**Đóng gói: ĐẠT, đã được user xác nhận bằng báo cáo kiểm độc lập.** `BAO-CAO-KIEM-GOI-1.0.3-docs1.md` ghi 404/404 file đọc hết/CRC hợp lệ, 403/403 payload khớp manifest, không thiếu/thừa/hash sai; 398 EXE/DLL khớp manifest, hướng dẫn đúng docs1 và không phát hiện tên trùng Windows/path traversal/symlink trong ZIP. ZIP/EXE SHA256 khớp các giá trị dưới đây; report đối chiếu GitHub tại HEAD1670bae/PRdraft. Snapshot report riêng ở `.evidence/user-package-review-eba5407193c64a0ca680c5980e1e0413`, SHA256 report `F954C27AF6FA425A09A587B1EB7B0B0917FCDAA2F0A4C6E489D0537EC9BDCD6B`.
+
+Đây là kết quả user cung cấp cho kiểm tra tĩnh gói, không phải lượt Codex chạy lại. Báo cáo chưa có ZIP1.0.3 cũ để đối chiếu cả398binary trước/sau; bằng chứng byte-identical của lượt đóng gói trước vẫn giữ riêng. Báo cáo không thực thi app/tests/CPU/Explorer/live-state/UAC và không đóng các scope đó. Không có lỗi đóng gói mới cần sửa; giữ nguyên ZIP/binary, tiếp tục đúng hai lượt dùng thực tế bên dưới. ZIP portable mở EXE cạnh HUONG-DAN.md; haiCMD thuộc repository, không phải file thiếu trong ZIP.
+
 Dừng vòng sửa lớn theo yêu cầu user. Gói hiện hành là `artifacts/NyanControlCenter-1.0.3-win-x64-docs1` và ZIP cùng tên. Hướng dẫn đúng bản 1.0.3 nằm ngay trong ZIP; không cần sidecar. Giữ nguyên binary/source **3dddf48ceec4c288ebcc309f9831f64c730ec5bd**, không restore/publish/build lại. Documentation commit **df516b07fcabc3ec8d1a6178225d445163904808**. Manifest tách hai nguồn này, ghi packageId/builtAt gốc/packagedAt mới; launcher và summary ghi packageId để phân biệt với ZIP cũ.
 
 EXE SHA256 không đổi: `35796B6AC77E6B2538F6DE68967B5CB5B42954A5FA526CE5FDA186FFD5C4BE09`. ZIP docs1 SHA256: **`B3A3EBAD86847B5AB621B0067AB17BD96BCA6A2CAA583B2488691926D628530E`**. ZIP cũ giữ nguyên `5B919134A4E6547B3B64F81959F24A644FD96A80761A72011C09E13ADBF5FB58`.
